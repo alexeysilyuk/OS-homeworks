@@ -1,5 +1,5 @@
 #!/bin/bash
-rm *.o *.exe *.s #remove old files
+rm *.o runfile *.s #remove old files
 
 for file in $(find . -name "*.c"); do
 	filename=$(basename "$file")
@@ -13,11 +13,8 @@ for file in $(find . -name "*.c"); do
 	gcc -Os -Wall -S -masm=intel "$filename.c" -Os
 done
 
-for file in $(find . -name "*.o"); do
-	filename=$(basename "$file")
-	filename="${filename%.*}"
-	gcc -Os -Wall  -g "$file" -o "$filename".exe  
-done
+gcc -Os -Wall  -g *.o -o runfile  
+
 
 
 
