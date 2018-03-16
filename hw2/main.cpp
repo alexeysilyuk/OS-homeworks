@@ -1,90 +1,129 @@
 #include <iostream>
-#include <string>
+
 #include <sstream>
 #include <unistd.h>
 #include <algorithm>
-#include <iterator>
+#include <list>
+
+
 
 
 using namespace std;
 
-vector<string> read();
-string eval(vector<string> tokens);
+void read();
+void ev(list<string> toks);
 void cleanBuffer();
 string getDir();
-vector<string> parseLine(string line);
+list<string> tokenize(string line);
+void clearList();
+void parseCommand(list<string> toks);
+
+list< std::string > tokens;
+string homedir;
+string currentDir;
 
 int main() {
     cout << "Welcome to \"@Shell\" " <<endl;
+    cout << "@Shell: "<<getDir()<< "> ";
     while(true){
+
+        tokens.clear();
+        read();
+
+        parseCommand(tokens);
         cout << "@Shell: "<<getDir()<< "> ";
 
-        vector<string> tokens = read();
-        eval(tokens);
 
     }
-    std::cout << "Hello, World!" << std::endl;
-    return 0;
 }
 
-vector<string> read(){
-    cleanBuffer();
+void read(){
     string line;
 
-
-    do {
+        cleanBuffer();
         getline(cin, line);
+
         if (cin.eof() || line.compare("exit") == 0)
         {
             cout << "Bye bye!" << endl;
             exit(0);
         }
-        vector<string> tokens = parseLine(line);
-        if(tokens.size()>0)
-            return tokens;
 
-    } while(true);
+    tokenize(line);
 
 
 
 }
+
+
+string getDir(){
+
+    char buffer[1000];
+
+        homedir = getenv("HOME");
+        currentDir = getcwd(buffer, sizeof(buffer));
+
+        if (currentDir.length() > homedir.length())
+            currentDir = "~" + currentDir.substr(homedir.length());
+
+        else if(currentDir.length() == homedir.length())
+            currentDir = "~/";
+        else
+            currentDir = getcwd(buffer, sizeof(buffer)); // return the current directory
+
+        return currentDir;
+
+}
+
+list<string> tokenize(string line){
+    string buf; // Have a buffer string
+    stringstream ss(line); // Insert the string into a stream
+
+        while (ss >> buf)
+            tokens.push_back(buf);
+
+    return tokens;
+
+}
+
+
+
 
 void cleanBuffer(){
     cin.clear();							// clear error flags
     cin.ignore(cin.rdbuf()->in_avail());	// ask buffer for length of chars in it and clear all of them
 
 }
-string getDir(){
 
-    char buffer[1000];
-    string homedir = getenv("HOME");
-    string currentDir =getcwd(buffer,sizeof(buffer));
 
-    if(currentDir.length()>homedir.length())
-        currentDir="~"+currentDir.substr(homedir.length());
 
-    else
-        currentDir = getcwd(buffer,sizeof(buffer)); // return the current directory
+void parseCommand(list<string> toks){
+    std::list<string>::iterator it;
 
-    return  currentDir;
-}
+    for (it=toks.begin(); it!=toks.end(); ++it)
+    {
 
-vector<string> parseLine(string line){
-    string buf; // Have a buffer string
-    stringstream ss(line); // Insert the string into a stream
+        if(it->compare("cd")==0)
+        {
+            ++it;
+            if(&it!=NULL)
+            {
+                if (chdir(it->c_str()) == 0)
+                {
+                    char cwd[512];
+                    currentDir = getcwd(cwd, sizeof(cwd));
+                }
+                else
+                    perror("@Shell: cd");
 
-    vector<string> tokens; // Create vector to hold our words
-
-    while (ss >> buf)
-        tokens.push_back(buf);
-
-    return tokens;
-}
-
-string eval(vector<string> tokens){
-
-    cout << "Tokens :"<<endl;
-    for (vector<string>::const_iterator iter = tokens.begin();
-         iter != tokens.end(); ++iter)
-        cout << *iter << endl;
+            }
+            else
+                perror("cd command must receive argument");
+        }
+        else if(it->compare("$?")==0){
+            cout << "LAST STATUS" <<endl;
+        }
+        else
+            cout << "OTHER COMMAND"<<endl;
+    }
 }

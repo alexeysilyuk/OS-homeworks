@@ -9,14 +9,12 @@
 /home/alex/OS homeworks/OS-homeworks/hw2/main.cpp
 iostream
 -
-string
--
 sstream
 -
 unistd.h
 -
 algorithm
 -
-iterator
+list
 -
 
