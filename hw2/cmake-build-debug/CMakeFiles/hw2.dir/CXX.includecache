@@ -1,0 +1,22 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/alex/OS homeworks/OS-homeworks/hw2/main.cpp
+iostream
+-
+string
+-
+sstream
+-
+unistd.h
+-
+algorithm
+-
+iterator
+-
+
