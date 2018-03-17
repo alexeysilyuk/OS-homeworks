@@ -17,6 +17,7 @@ string getDir();
 list<string> tokenize(string line);
 void clearList();
 void parseCommand(list<string> toks);
+int exitStatus=0;
 
 list< std::string > tokens;
 string homedir;
@@ -46,7 +47,7 @@ void read(){
         if (cin.eof() || line.compare("exit") == 0)
         {
             cout << "Bye bye!" << endl;
-            exit(0);
+            exit(exitStatus);
         }
 
     tokenize(line);
@@ -106,19 +107,33 @@ void parseCommand(list<string> toks){
         if(it->compare("cd")==0)
         {
             ++it;
-            if(&it!=NULL)
+            if(it!=toks.end())
             {
-                if (chdir(it->c_str()) == 0)
+                if(it->compare("~")==0)
+                {
+                    homedir = getenv("HOME");
+                    chdir(homedir.c_str());
+                }
+                else if (chdir(it->c_str()) == 0)
                 {
                     char cwd[512];
                     currentDir = getcwd(cwd, sizeof(cwd));
                 }
                 else
+                {
                     perror("@Shell: cd");
-
+                    exitStatus=1;
+                    return ;
+                }
             }
             else
+
+            {
                 perror("cd command must receive argument");
+                exitStatus=1;
+                return;
+            }
+
         }
         else if(it->compare("$?")==0){
             cout << "LAST STATUS" <<endl;
