@@ -18,6 +18,9 @@ list<string> tokenize(string line);
 void clearList();
 void parseCommand(list<string> toks);
 string parseVar(string it);
+bool isVariable(string str);
+bool isAlphaNumeric(char ch);
+bool isCapitalLetter(char ch);
 
 int lastExitStatus=0;
 
@@ -139,20 +142,14 @@ string parseVar(string it){
 
     for(int i=0,j=0;i<it.length();i++)
     {
-        if(it[i]=='$'){
+        if(it[i]=='$' && isCapitalLetter(it[i+1]))
+        {
             i++;
-            if(it[i]=='?')
-                parsedPath+=to_string(lastExitStatus);
-            else
-            {
                 varName="";
-                while(it[i] !='/' && i<it.length()) {
-                    if ((it[i] >= 'a' && it[i] <= 'z') || (it[i] >= 'A' && it[i] <= 'Z') || (it[i]=='_') || (it[i]>='0' && it[i]<='9'))
+                while(it[i] !='/' && i<it.length() && (isAlphaNumeric(it[i]) || it[i]=='_')) {
                         varName += it[i++];
-                    else
-                        cout <<"Incorrect char in variable name\n";
                 }
-
+                cout << isVariable(varName)<<endl;
                 try{
                     char* varPath = getenv (varName.c_str());
                     if(varPath)
@@ -161,12 +158,13 @@ string parseVar(string it){
                         parsedPath+=varPath;
                     }
                 }
-                catch(exception ex)
-                {
+                catch(exception ex){}
 
-                }
-                parsedPath+=it[i];
-            }
+            i--;
+        }
+        else if(it[i]=='$'&& it[i+1]=='?'){
+            i++;
+            parsedPath+=to_string(lastExitStatus);
         }
         else
             parsedPath+=it[i];
@@ -215,4 +213,26 @@ cout << "PATH: " <<parsedPath<<endl;
 //        perror("@Shell: cd");
 //        lastExitStatus=1;
 //    }
+}
+
+bool isVariable(string str){
+    bool status=false;
+    if(isCapitalLetter(str[0]))
+    {
+        for(int i=1;i<str.length();i++)
+            if(isAlphaNumeric(str[i])||str[i]=='_')
+                status=true;
+            else
+                return false;
+    }
+    return status;
+}
+
+bool isAlphaNumeric(char ch){
+    return ((ch>='A' && ch<='Z')||(ch>='a' && ch<='z')||(ch>='0' && ch<='9')) ?true:false;
+}
+
+
+bool isCapitalLetter(char ch){
+    return (ch>='A' && ch<='Z') ? true : false;
 }
