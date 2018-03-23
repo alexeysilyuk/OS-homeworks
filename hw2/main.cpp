@@ -104,17 +104,40 @@ void cleanBuffer(){
 
 
 void parseCommand(list<string> toks){
-    std::list<string>::iterator it;
-
-    for (it=toks.begin(); it!=toks.end(); ++it)
-    {
-
+    //std::list<string>::iterator it;
+    string path="";
+    for (std::list<string>::const_iterator it = toks.begin(), end = toks.end(); it != end; ++it)
+        {
         if(it->compare("cd")==0)
         {
             ++it;
             if(it!=toks.end())
             {
-                parseVar(*it);
+                path=parseVar(*it);
+                if(path.compare("~")==0)
+                {
+                    homedir = getenv("HOME");
+                    if(chdir(homedir.c_str())==0)
+                        lastExitStatus=0;
+                    else
+                    {
+                        perror("@Shell: cd");
+                        lastExitStatus=1;
+                    }
+                }
+                else if (chdir(path.c_str()) == 0)
+                {
+                    char cwd[512];
+                    currentDir = getcwd(cwd, sizeof(cwd));
+                    lastExitStatus=0;
+                }
+
+                else
+                {
+                    perror("@Shell: cd");
+                    lastExitStatus=1;
+                }
+
                 return;
             }
             else
@@ -128,13 +151,7 @@ void parseCommand(list<string> toks){
             cout << "OTHER COMMAND"<<endl;
     }
 }
-bool replace(std::string& str, const std::string& from, const std::string& to) {
-    size_t start_pos = str.find(from);
-    if(start_pos == std::string::npos)
-        return false;
-    str.replace(start_pos, from.length(), to);
-    return true;
-}
+
 
 string parseVar(string it){
     string parsedPath="";
@@ -149,17 +166,12 @@ string parseVar(string it){
                 while(it[i] !='/' && i<it.length() && (isAlphaNumeric(it[i]) || it[i]=='_')) {
                         varName += it[i++];
                 }
-                cout << isVariable(varName)<<endl;
                 try{
                     char* varPath = getenv (varName.c_str());
                     if(varPath)
-                    {
-                        cout << "Var path: "<<varPath<<endl;
                         parsedPath+=varPath;
-                    }
                 }
                 catch(exception ex){}
-
             i--;
         }
         else if(it[i]=='$'&& it[i+1]=='?'){
@@ -170,7 +182,7 @@ string parseVar(string it){
             parsedPath+=it[i];
 
     }
-cout << "PATH: " <<parsedPath<<endl;
+    return parsedPath;
     //replace(it, "$?", to_string(lastExitStatus));
 
 //
@@ -191,28 +203,6 @@ cout << "PATH: " <<parsedPath<<endl;
 //
 //
 //    cout << it->find('$')<<endl;
-//    if(it->compare("~")==0)
-//    {
-//        homedir = getenv("HOME");
-//        if(chdir(homedir.c_str())==0)
-//            lastExitStatus=0;
-//        else
-//        {
-//            perror("@Shell: cd");
-//            lastExitStatus=1;
-//        }
-//    }
-//    else if (chdir(it->c_str()) == 0)
-//    {
-//        char cwd[512];
-//        currentDir = getcwd(cwd, sizeof(cwd));
-//        lastExitStatus=0;
-//    }
-//    else
-//    {
-//        perror("@Shell: cd");
-//        lastExitStatus=1;
-//    }
 }
 
 bool isVariable(string str){
