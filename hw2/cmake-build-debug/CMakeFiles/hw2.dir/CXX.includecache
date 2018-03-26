@@ -17,4 +17,12 @@ algorithm
 -
 list
 -
+sys/wait.h
+-
+unistd.h
+-
+stdlib.h
+-
+cstring
+-
 
