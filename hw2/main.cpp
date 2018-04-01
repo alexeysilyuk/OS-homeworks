@@ -17,7 +17,7 @@ void cleanBuffer();
 string getDir();
 list<string> tokenize(string line);
 void clearList();
-void evaluate(list<string> toks);
+void evaluate();
 string parseVar(string it);
 bool isVariable(string str);
 bool isAlphaNumeric(char ch);
@@ -27,13 +27,14 @@ void ParentProc(void); /* parent process prototype */
 void runProccess(char **command);
 void runBackProcess(char ** command);
 
-#define MAX_COUNT 200
+#define MAX_ARGS 10
 #define ARGSSIZE 1024
 int lastExitStatus=0;
 
 list< std::string > tokens;
 string homedir;
 string currentDir;
+
 
 int main() {
     cout << "Welcome to \"@Shell\" " <<endl;
@@ -43,7 +44,7 @@ int main() {
         tokens.clear();
         read();
 
-        evaluate(tokens);
+        evaluate();
         cout << "@Shell: "<<getDir()<< "> ";
 
 
@@ -110,15 +111,15 @@ void cleanBuffer(){
 
 
 
-void evaluate(list<string> toks){
+void evaluate(){
 
     string path="";
-    for (list<string>::const_iterator it = toks.begin(), end = toks.end(); it != end; ++it)
+    for (list<string>::const_iterator it = tokens.begin(), end = tokens.end(); it != end; ++it)
         {
         if(it->compare("cd")==0)
         {
             ++it;
-            if(it!=toks.end())
+            if(it!=tokens.end())
             {
                 path=parseVar(*it);
                 if(path.compare("~")==0)
@@ -134,7 +135,7 @@ void evaluate(list<string> toks){
                 }
                 else if (chdir(path.c_str()) == 0)
                 {
-                    char cwd[512];
+                    char cwd[1024];
                     currentDir = getcwd(cwd, sizeof(cwd));
                     lastExitStatus=0;
                 }
@@ -163,13 +164,13 @@ void evaluate(list<string> toks){
         else
         {
             int status;
-            const char** array = new const char*[toks.size()];
+            const char** array = new const char*[tokens.size()];
             char *args[ARGSSIZE];
             unsigned index = 0;
             bool deamonProc=false;
 
-            for (list<string>::const_iterator iter = it; iter != toks.end(); ++iter) {
-                if(*iter == "&" && index+1==toks.size())
+            for (list<string>::const_iterator iter = it; iter != tokens.end(); ++iter) {
+                if(*iter == "&" && index+1==tokens.size())
                 {
                     deamonProc=true;
                 }
@@ -177,31 +178,30 @@ void evaluate(list<string> toks){
                 {
                     array[index] = iter->c_str();
                     args[index] = new char[ARGSSIZE];
-                    strcat(args[index],array[index]);
+                    strcpy(args[index],parseVar(array[index]).c_str());
                 }
 
                 index++;
             }
+            pid_t zombiePid,pid;
+            int WEXITSTATUS_status;
 
-            pid_t deamonPid,pid;
-            int pidStatus,WEXITSTATUS_status;
-
-            switch(pid=fork()) {   // create son process
+            switch(pid=fork()) {
                 case -1:
                     cout << "fork() command not succseed\n" << endl;
                     exit(1);
                 case 0:
-                    if (execvp(array[0],args) == -1) {
-                        cout << array[0] << " command not found" << endl;
+                    if (execvp(args[0],args) == -1) {
+                        cout << strerror(errno)<<endl;
+                        cout << args[0] << " command not found" << endl;
                         exit(127);
                     }
                 default:
                     if (deamonProc) {
-                        cout << "[" << getpid() << "]\n";
+                        cout << "[" << pid << "]\n";
                         lastExitStatus = 0;
                     }
-                    else
-                    {
+                    else {
                         if (waitpid(pid, &status, 0) == -1) {
                             lastExitStatus = 1;
                             exit(1);
@@ -211,19 +211,40 @@ void evaluate(list<string> toks){
                         if (WEXITSTATUS_status == 0)
                             lastExitStatus = 0;
 
-                        else if (WIFSIGNALED(status))
-                        {
+                        else if (WIFSIGNALED(status)) {
                             WEXITSTATUS_status = 128 + WTERMSIG(status);
                             lastExitStatus = WEXITSTATUS_status;;
                             cout << "signal status:" << lastExitStatus << endl;
-                        }
-                        else
-                        {
+                        } else {
                             lastExitStatus = WEXITSTATUS_status;
                             cout << "exit status : " << lastExitStatus << endl;
                         }
+
+
+                        while ((zombiePid = waitpid(-1, &status, WNOHANG)) > 0) {
+
+                            int ZOMBIE_status = 0;
+                            string zombieReturnStatus = "";
+
+                            if (WIFEXITED(status)) {
+                                ZOMBIE_status = WEXITSTATUS(status);
+                                zombieReturnStatus = to_string(ZOMBIE_status);
+
+                                cout << "deamon process : ["<< zombiePid << "] exit status : " << zombieReturnStatus << endl;
+
+
+                            } else if (WIFSIGNALED(status)) {
+                                ZOMBIE_status = 128 + WTERMSIG(status);
+                                zombieReturnStatus = to_string(ZOMBIE_status);
+                                cout << "deamon process : ["<< zombiePid << "] signal status : " << zombieReturnStatus << endl;
+
+                            }
+
+                            cout << "Process [" << zombiePid<< "] exited "<< endl;
+                        }
                     }
             }
+
             return;
 
 //                            while((zomb_pid=waitpid(-1,&pid_status,WNOHANG))>0)  // return the zomb_pid. "-1" means for any child process. &pid_status - the status of the pid.  WNOHANG means return immediately if not child has exited
@@ -264,7 +285,7 @@ string parseVar(string it){
     string parsedPath="";
     string varName;
 
-    for(int i=0,j=0;i<it.length();i++)
+    for(size_t i=0;i<it.length();i++)
     {
         if(it[i]=='$' && isCapitalLetter(it[i+1]))
         {
@@ -305,7 +326,7 @@ bool isVariable(string str){
     bool status=false;
     if(isCapitalLetter(str[0]))
     {
-        for(int i=1;i<str.length();i++)
+        for(size_t i=1;i<str.length();i++)
             if(isAlphaNumeric(str[i])||str[i]=='_')
                 status=true;
             else
