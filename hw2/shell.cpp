@@ -1,33 +1,7 @@
-#include <iostream>
-
-#include <sstream>
-#include <unistd.h>
-#include <algorithm>
-#include <list>
-#include <sys/wait.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <cstring>
+#include "shell.h"
 
 
 using namespace std;
-
-void read();
-void cleanBuffer();
-string getDir();
-list<string> tokenize(string line);
-void clearList();
-void evaluate();
-string parseVar(string it);
-bool isVariable(string str);
-bool isAlphaNumeric(char ch);
-bool isCapitalLetter(char ch);
-void ChildProc(void); /* child process prototype */
-void ParentProc(void); /* parent process prototype */
-void runProccess(char **command);
-void runBackProcess(char ** command);
-
-#define MAX_ARGS 10
 #define ARGSSIZE 1024
 int lastExitStatus=0;
 
@@ -35,34 +9,37 @@ list< std::string > tokens;
 string homedir;
 string currentDir;
 
-
-int main() {
+int main(void) {
     cout << "Welcome to \"@Shell\" " <<endl;
-    cout << "@Shell: "<<getDir()<< "> ";
+    // infinite REPL
+
     while(true){
 
-        tokens.clear();
-        read();
-
-        evaluate();
+        tokens.clear(); // remove old tokens
+        cout << endl;
         cout << "@Shell: "<<getDir()<< "> ";
 
-
+        read();
+        evaluate();
     }
+    return 1;
 }
+
 
 void read(){
     string line;
 
-        cleanBuffer();
+        cleanBuffer();  // clean std input stream
         getline(cin, line);
 
+        // exit if terminated or choosen to exit
         if (cin.eof() || line.compare("exit") == 0)
         {
             cout << "Bye bye!" << endl;
             exit(lastExitStatus);
         }
 
+    // run tokenization function
     tokenize(line);
 
 
@@ -70,6 +47,7 @@ void read(){
 }
 
 
+// update global homedir and current dir
 string getDir(){
 
     char buffer[1000];
@@ -77,6 +55,7 @@ string getDir(){
         homedir = getenv("HOME");
         currentDir = getcwd(buffer, sizeof(buffer));
 
+        // replace $HOME by ~ symbol
         if (currentDir.length() > homedir.length())
             currentDir = "~" + currentDir.substr(homedir.length());
 
@@ -86,41 +65,44 @@ string getDir(){
             currentDir = getcwd(buffer, sizeof(buffer)); // return the current directory
 
         return currentDir;
-
 }
 
+// separate user input to tokens
 list<string> tokenize(string line){
-    string buf; // Have a buffer string
+    string buffer; // string buffer
     stringstream ss(line); // Insert the string into a stream
 
-        while (ss >> buf)
-            tokens.push_back(buf);
+    // each separated by space token, push to tokens list
+    while (ss >> buffer)
+        tokens.push_back(buffer);
 
     return tokens;
-
 }
 
-
-
-
+// clean input buffer
 void cleanBuffer(){
     cin.clear();							// clear error flags
     cin.ignore(cin.rdbuf()->in_avail());	// ask buffer for length of chars in it and clear all of them
-
 }
 
 
-
+//eval finction
 void evaluate(){
 
     string path="";
+
+    // loop iterates over tokens list
     for (list<string>::const_iterator it = tokens.begin(), end = tokens.end(); it != end; ++it)
-        {
+    {
+        // if choosen CD command by user
         if(it->compare("cd")==0)
         {
             ++it;
+            // check if have arguments
             if(it!=tokens.end())
             {
+                // send token to parsing, replacing VARs by their values
+                // after parsing path try to CHDIR
                 path=parseVar(*it);
                 if(path.compare("~")==0)
                 {
@@ -137,6 +119,7 @@ void evaluate(){
                 {
                     char cwd[1024];
                     currentDir = getcwd(cwd, sizeof(cwd));
+                    perror("@Shell: cd");
                     lastExitStatus=0;
                 }
 
@@ -145,7 +128,6 @@ void evaluate(){
                     perror("@Shell: cd");
                     lastExitStatus=1;
                 }
-
                 return;
             }
             else
@@ -155,72 +137,110 @@ void evaluate(){
             }
 
         }
-
-            else if (it->compare("$?")==0)
+        // if choosen $? print last status
+        else if (it->compare("$?")==0)
         {
             cout << lastExitStatus<<endl;
             return;
         }
+        // choosen some other BASH command to execute
         else
         {
-            int status;
-            const char** array = new const char*[tokens.size()];
-            char *args[ARGSSIZE];
-            unsigned index = 0;
-            bool deamonProc=false;
+            int status; // for process status
 
-            for (list<string>::const_iterator iter = it; iter != tokens.end(); ++iter) {
-                if(*iter == "&" && index+1==tokens.size())
+            unsigned index = 0;
+            unsigned toksNumber=0;
+            int deamonProc=0;
+
+            // iterate over list of tokens, check if DEAMON proccess needed
+            // count real arguments amount for pending to execv
+            for (list<string>::const_iterator iter = it; iter != tokens.end(); ++iter)
                 {
-                    deamonProc=true;
+                    if(*iter == "&" && index+1==tokens.size())
+                        deamonProc=1;
+                    else
+                        toksNumber++;
+                index++;
                 }
+
+            // allocate memory for args array+1 for NULL at the end of args list
+            const char** array = new const char*[toksNumber+1];
+            char *args[toksNumber+1];
+
+            index=0;
+
+            // because we need to send array of args to execv, need to copy
+            // tokens from LIST type to char[]
+            for (list<string>::const_iterator iter = it; iter != tokens.end(); ++iter) {
+                if(*iter == "&" && index==toksNumber)
+                    deamonProc=1;
                 else
                 {
                     array[index] = iter->c_str();
                     args[index] = new char[ARGSSIZE];
+
+                    // copy token after parsing it, if needed
                     strcpy(args[index],parseVar(array[index]).c_str());
+                    index++;
                 }
 
-                index++;
             }
+            // put NULL to end of args list
+            args[index]=NULL;
+
             pid_t zombiePid,pid;
             int WEXITSTATUS_status;
 
+            // fork processes
             switch(pid=fork()) {
                 case -1:
                     cout << "fork() command not succseed\n" << endl;
                     exit(1);
+                // for child process, run function execvp and send args list
+                // in case of failure, print error and exit with status 127
                 case 0:
                     if (execvp(args[0],args) == -1) {
                         cout << strerror(errno)<<endl;
                         cout << args[0] << " command not found" << endl;
                         exit(127);
                     }
+                    break;
+                // for parent process
                 default:
+                    //if choosen DEAMON process, print child process pid after fork
                     if (deamonProc) {
                         cout << "[" << pid << "]\n";
                         lastExitStatus = 0;
                     }
+                    // if not DEAMON, run WAITPID and wait for child process
+                    // and update his exit status
                     else {
                         if (waitpid(pid, &status, 0) == -1) {
                             lastExitStatus = 1;
                             exit(1);
                         }
+
+                        // get child exit status
                         WEXITSTATUS_status = WEXITSTATUS(status);
 
+                        // if child process succeed, update last status to 0
                         if (WEXITSTATUS_status == 0)
                             lastExitStatus = 0;
 
+                        // if child process, closed with signal, update lastexitstatus
+                        // with 128+signal number
                         else if (WIFSIGNALED(status)) {
                             WEXITSTATUS_status = 128 + WTERMSIG(status);
                             lastExitStatus = WEXITSTATUS_status;;
                             cout << "signal status:" << lastExitStatus << endl;
-                        } else {
+                        }
+                        // if not terminated, update last exit status
+                        else {
                             lastExitStatus = WEXITSTATUS_status;
                             cout << "exit status : " << lastExitStatus << endl;
                         }
 
-
+                        // this loop carries ZOMBIE processes termination
                         while ((zombiePid = waitpid(-1, &status, WNOHANG)) > 0) {
 
                             int ZOMBIE_status = 0;
@@ -247,74 +267,56 @@ void evaluate(){
 
             return;
 
-//                            while((zomb_pid=waitpid(-1,&pid_status,WNOHANG))>0)  // return the zomb_pid. "-1" means for any child process. &pid_status - the status of the pid.  WNOHANG means return immediately if not child has exited
-//                            {
-//                                int temp_status;
-//
-//                                if(WIFEXITED(pid_status)){   // WIFEXITED return true if the child terminated normally
-//                                    temp_status=WEXITSTATUS(pid_status);
-//                                    ss << temp_status;
-//                                    zomb_status = ss.str();
-//                                    cout << "exit status:" <<*exit_status<<endl;
-//
-//
-//                                }
-//
-//                                else if(WIFSIGNALED(pid_status)){     // WIFSIGNALED - returned true if the child process was terminated by a signal
-//                                    temp_status=128+WTERMSIG(pid_status);  //  128 is exit status when process terminated by signal + WTERMSIG(pid_status) ->the number of the signal that caused the child process
-//                                    ss << temp_status;
-//                                    zomb_status = ss.str();
-//                                    cout << "signal status:" <<*exit_status<<endl;
-//
-//                                }
-//
-//                                else {
-//                                    zomb_status = "0";
-//                                }
-//
-//                                cout << '[' << zomb_pid << "]: exited,status=" << zomb_status << endl;
-//
-//                            }
-
             }
     }
 }
 
-
+// parse received var
 string parseVar(string it){
     string parsedPath="";
     string varName;
 
+    //iterate over token
     for(size_t i=0;i<it.length();i++)
     {
+        // if detects '$' symbol and next symbol after it is capital, means VAR
         if(it[i]=='$' && isCapitalLetter(it[i+1]))
         {
             i++;
+                // get variable name, seek '/' or string end for stop loop
                 varName="";
                 while(it[i] !='/' && i<it.length() && (isAlphaNumeric(it[i]) || it[i]=='_')) {
                         varName += it[i++];
                 }
+            // run function to check if variable is correct
             if(isVariable(varName))
             {
+                //try to get variable from BASH environment
                 try {
                     char *varPath = getenv(varName.c_str());
+                    // if found VAR in env, cancatinate value to parsedPath
                     if (varPath)
                         parsedPath += varPath;
                 }
+                    // if VAR not exists, skip it
                 catch (exception ex) {}
-            } else
+            }
+                // if varible in incorrect
+            else
                 perror("incorrect variable name\n");
             i--;
         }
+        // if found '$?' cancatinate lastexit status to parsedPAth
         else if(it[i]=='$'&& it[i+1]=='?'){
             i++;
             parsedPath+=to_string(lastExitStatus);
         }
+        // if found '~', cancatinate home directory to parsedPath
         else if (it[i]=='~')
         {
             parsedPath+=getenv("HOME");
         }
-
+        //in all other cases, simple cancatinate character as is
         else
             parsedPath+=it[i];
 
@@ -322,6 +324,8 @@ string parseVar(string it){
     return parsedPath;
 }
 
+// chech if variable consists allowed structure, starts with capital letter,
+//contains only alphanumeric or '_' symbol
 bool isVariable(string str){
     bool status=false;
     if(isCapitalLetter(str[0]))
@@ -345,12 +349,3 @@ bool isCapitalLetter(char ch){
 }
 
 
-
-void runProccess(char **command){
-
-}
-
-void runBackProcess(char ** command){
-
-
-}
