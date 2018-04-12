@@ -52,6 +52,13 @@ public:
         setPrice(price);
     }
 
+    MenuItem(int id, std::string name, float price,int orders){
+        setID(id);
+        setName(name);
+        setPrice(price);
+        setTotalOrdered(orders);
+    }
+
     std::string to_string(){
         std::ostringstream oss;
         oss<< ID<<"|"<<Name<<"|"<<Price<<"|"<<TotalOrdered;
