@@ -23,6 +23,7 @@
 
 #include "OrderBoard.h"
 #include "MenuItem.h"
+#include "Semaphore.h"
 
 using namespace std;
 
@@ -37,6 +38,7 @@ enum ERROR_CODES {INCORRECT_PARAM=128};
 
 char  *itemsSegptr, *ordersSegptr;
 int ordersShmid,itemsShmid;
+int itemsSem,ordersSem,waitersSem,customersSem;
 
 
 vector<MenuItem> menuItems;
@@ -55,11 +57,12 @@ bool isTimedOut();
 void allocateSharedMemory(pid_t pid,char** segptr, int *shmid);
 void printMenu(char* segptr);
 void manageMainProcess(pid_t pid);
-MenuItem randomChooseItem(char* itemsSegptr);
+MenuItem randomChooseItem(vector<MenuItem> menu);
 vector<MenuItem> shmemToVector();
 char* ordersVectorToShmem(vector<MenuItem> items);
-void updateOrderedAmount(int amount, int itemID);
-
+void updateOrderedAmount(vector<MenuItem> items, int itemID,int amount);
+void itemsVectorToShmem(vector<MenuItem> items,int itemsShmid);
+void initAllSemaphores();
 ////////////////////////////////
 
 bool analyzeParams(int argc, char * argv[]){
@@ -104,22 +107,16 @@ void createMenuItems(int itemsAmount){
         menuItems.push_back(MenuItem(j,ItemNameList[j],ItemPrices[j]));
 
     }
-//
+
     allocateSharedMemory(getpid(),&itemsSegptr,&itemsShmid);
 
-    for(vector<MenuItem>::iterator it = menuItems.begin();it!=menuItems.end();++it)
-    {
-        //write to shared memory
-        strcat(itemsSegptr, it->to_string().c_str());
-        strcat(itemsSegptr,"\n");
-
-    }
+    itemsVectorToShmem(menuItems,itemsShmid);
 
     printMenu(itemsSegptr);
 
     //remove a shared memory section
     //IPC_RMID: Marks a segment for removal.
-    shmctl(itemsShmid, IPC_RMID, 0);
+//    shmctl(itemsShmid, IPC_RMID, 0);
 }
 
 
@@ -184,10 +181,14 @@ void startClientsProcesses(int clientsSize, int waitersSize){
 
 }
 
-int getRandNum(pid_t pid,int minTime,int maxTime){
-    std::mt19937 gen(time(0)+pid);
-    std::uniform_int_distribution<> uid(minTime, maxTime);
+int getRandNum(int min,int max){
+    std::random_device  gen;
+    std::uniform_int_distribution<> uid(min, max);
     return uid(gen);
+
+
+
+
 }
 
 bool isTimedOut(){
@@ -196,37 +197,35 @@ bool isTimedOut(){
 
 void manageCustomers(pid_t pid,int id){
     int sleepTime;
+
     while (!isTimedOut()){
-        sleepTime = getRandNum(getpid(),3,6);
-
+        sleepTime = getRandNum(3,6);
         sleep(sleepTime);
-
-        bool isOrdered = (getRandNum(getpid(),0,1)==1)?true:false;
-        MenuItem itemToOrder = randomChooseItem(itemsSegptr);
+        p(customersSem);
+        vector<MenuItem> menu =  shmemToVector();
+        MenuItem itemToOrder = randomChooseItem(menu);
         cout << getTime()<< "Customer "<<id << ": reads menu about "<<itemToOrder.getName();
-
+        bool isOrdered = (getRandNum(0,1)==1)?true:false;
         sleep(1);
 
         if(isOrdered){
-            int amount = getRandNum(getpid(),1,4);
+            int amount = getRandNum(1,4);
             cout << "( ordered, amount "<<amount<<" )\n";
-            updateOrderedAmount(amount,itemToOrder.getID());
+            updateOrderedAmount(menu,itemToOrder.getID(),amount);
         }
         else
             cout << "( doesn't want to order )"<<endl;
-
-
-
+        v(customersSem);
     }
+
 }
 
 void manageWaiters(pid_t pid){
     int sleepTime;
     while (!isTimedOut()){
-        sleepTime = getRandNum(getpid(),3,6);
+        sleepTime = getRandNum(3,6);
         sleep(sleepTime);
         cout << getTime()<<"waiter "<<pid<< " after sleep "<< sleepTime<<endl;
-
     }
 }
 
@@ -256,7 +255,7 @@ void printMenu(char* segptr){
 }
 
 void allocateSharedMemory(pid_t pid,char** segptr, int *shmid){
-    int randNum = getRandNum(pid,0,100000);
+    int randNum = getRandNum(0,100000);
     key_t  key = ftok(".", randNum);
 
     if((*shmid = shmget(key, SEGSIZE, IPC_CREAT|IPC_EXCL|0666)) == -1)
@@ -281,20 +280,37 @@ void allocateSharedMemory(pid_t pid,char** segptr, int *shmid){
     }
 }
 
+void deleteSemsAndShmems(){
+shmctl(itemsShmid, IPC_RMID, 0);    // items shmem
+semctl(itemsSem, 0, IPC_RMID, 0);   // items sem
+semctl(customersSem, 0, IPC_RMID, 0);   // items sem
+}
+
 void manageMainProcess(pid_t pid){
+    vector<MenuItem> list = shmemToVector();
+    for(vector<MenuItem>::iterator it = list.begin();it!=list.end();++it)
+        cout<<it->to_string()<<endl;
+
+    deleteSemsAndShmems();
+}
+
+
+MenuItem randomChooseItem(vector<MenuItem> menu)
+{
+    int randomItemIndex = getRandNum(0,menu.size()-1);
+    return menu.at(randomItemIndex);
 
 }
 
+// receive line from shmem and sepearate it by '|' delimiter, and create MenuItem object
 MenuItem getTokens(string tokenLine){
     list<string> tokens;
     std::stringstream ss(tokenLine);
     std::string token;
 
-        while(std::getline(ss,token,'|')){
-            tokens.push_back(token);
-        }
-
-
+    while(std::getline(ss,token,'|')){
+        tokens.push_back(token);
+    }
 
     int id =  atoi(tokens.front().c_str());
     tokens.pop_front();
@@ -304,59 +320,67 @@ MenuItem getTokens(string tokenLine){
     tokens.pop_front();
     int orders =  atoi(tokens.front().c_str());
     tokens.pop_front();
-    MenuItem newItem = MenuItem(id,name,price,orders);
-
-    return newItem;
 
 
 
+    return MenuItem(id,name,price,orders);
 }
 
-MenuItem randomChooseItem(char* itemsSegptr)
-{
-    int randomItemIndex = getRandNum(getpid(),0,menuItemsCount-1);
-        std::stringstream ss(itemsSegptr);
-        std::string token;
-        int line=0;
-        if (itemsSegptr != NULL)
-        {
-            while(std::getline(ss,token,'\n')){
-
-                if(line==randomItemIndex){
-                    return getTokens(token);
-                }
-
-                line++;
-            }
-        }
-
-
-}
 
 // for friendly use, get data from shared memory and convert into vector array
 vector<MenuItem> shmemToVector(){
     vector<MenuItem> itemsList;
+
+    p(itemsSem);
     std::stringstream ss(itemsSegptr);
     std::string token;
-    int line=0;
     if (itemsSegptr != NULL)
     {
         while(std::getline(ss,token,'\n')){
-            itemsList.push_back(getTokens(token));
+            MenuItem item = getTokens(token);
+            itemsList.push_back(item);
+
         }
     }
+    v(itemsSem);
+    return itemsList;
 }
-char* ordersVectorToShmem(vector<MenuItem> items){
+void itemsVectorToShmem(vector<MenuItem> items,int itemsshmID){
+
+
+    p(itemsSem);
+
+    strcpy(itemsSegptr,"");
+    for(vector<MenuItem>::iterator it = items.begin();it!=items.end();++it)
+    {
+        //write to shared memory
+        strcat(itemsSegptr, it->to_string().c_str());
+        strcat(itemsSegptr,"\n");
+
+    }
+    v(itemsSem);
 
 }
 
-void updateOrderedAmount(int amount, int itemID){
-    vector<MenuItem> items = shmemToVector();
-//    MenuItem itemToUpdate = items[itemID];
-    cout << "vectorSize() = "<<items.size()<<endl;
-//
-//    for(int i=0;i<items.size();i++)
-//        cout << items.at(i).getID()<<endl;
+void updateOrderedAmount(vector<MenuItem> items, int itemID,int amount){
+
+    for (vector<MenuItem>::iterator it = items.begin();it!=items.end();++it)
+        if (it->getID()==itemID)
+            it->setTotalOrdered(it->getTotalOrdered()+amount);
+
+    itemsVectorToShmem(items,itemsShmid);
+}
+
+void initAllSemaphores(){
+    srand(time(NULL));
+    key_t semkey   = ftok(".", getRandNum(0,100000));
+    if((itemsSem=initsem(semkey,1))<0)
+        exit(1);
+
+    semkey   = ftok(".", getRandNum(0,100000));
+    if((customersSem=initsem(semkey,1))<0)
+        exit(1);
 
 }
+
 #endif //HW3_EX3_H

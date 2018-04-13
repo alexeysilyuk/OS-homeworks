@@ -34,9 +34,9 @@ int main(int argc, char* argv[]) {
     cout << "Waiters count: "<< waitersCount<<endl;
     cout << "================================"<<endl;
 
-
+    initAllSemaphores();
     createMenuItems(menuItemsCount);
-
+    //initAllSemaphores();
     cout << "================================"<<endl;
 
     gettimeofday (&startTime, NULL); // start counting time
@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) {
     cout <<getTime()<< "Main process ID " << getpid() << " start" << endl;
     cout << "================================"<<endl;
 
-//    initializeSemaphores();
+
     createOrdersBoards(customersCount);
 
     startClientsProcesses(customersCount,waitersCount);
