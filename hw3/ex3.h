@@ -36,15 +36,12 @@ enum ERROR_CODES {INCORRECT_PARAM=128};
 #define SEGSIZE 100*10 // 100 bytes for each item * maximum 10 items in menu
 
 
-char  *itemsSegptr, *ordersSegptr;
-int ordersShmid,itemsShmid;
-int itemsSem,ordersSem,waitersSem,customersSem;
+char  *itemsSegptr, *ordersSegptr,*earningsSegptr,*orderedAmountSegptr;
+int ordersShmid,itemsShmid,earningsShmid,orderedAmountShmid;
+int itemsSem,ordersSem,waitersSem,customersSem,coutSem, reader,writer;
 
 
 vector<MenuItem> menuItems;
-vector<OrderBoard> boards;
-//MenuItem** menuItems;
-//OrderBoard** boards;
 int simulationDuration,menuItemsCount;
 
 struct timeval currentTime, startTime;
@@ -52,19 +49,36 @@ struct timeval currentTime, startTime;
 
 /// FUNCS Predeclarations
 void manageCustomers(pid_t pid,int id);
-void manageWaiters(pid_t pid);
+void manageWaiters(pid_t pid,int id);
 bool isTimedOut();
 void allocateSharedMemory(pid_t pid,char** segptr, int *shmid);
 void printMenu(char* segptr);
 void manageMainProcess(pid_t pid);
 MenuItem randomChooseItem(vector<MenuItem> menu);
-vector<MenuItem> shmemToVector();
-char* ordersVectorToShmem(vector<MenuItem> items);
+vector<MenuItem> itemsShmemToVector();
+void ordersVectorToShmem(vector<OrderBoard> items,int ordersShmemID);
 void updateOrderedAmount(vector<MenuItem> items, int itemID,int amount);
 void itemsVectorToShmem(vector<MenuItem> items,int itemsShmid);
 void initAllSemaphores();
+void addOrderToBoard(int customerID, int itemID,int amount);
+OrderBoard getOrderTokens(string tokenLine);
+vector<OrderBoard> ordersShmemToVector();
+void deleteSemsAndShmems();
 ////////////////////////////////
 
+void endBanner(){
+    cout << R"(
+
+ (`-').->(`-')  _ (`-')  _
+ ( OO)_  ( OO).-/ ( OO).-/         .->        .->        .->
+(_)--\_)(,------.(,------.     ,--.'  ,-.(`-')----. ,--.(,--.
+/    _ / |  .---' |  .---'    (`-')'.'  /( OO).-.  '|  | |(`-')
+\_..`--.(|  '--. (|  '--.     (OO \    / ( _) | |  ||  | |(OO )
+.-._)   \|  .--'  |  .--'      |  /   /)  \|  |)|  ||  | | |  \
+\       /|  `---. |  `---.     `-/   /`    '  '-'  '\  '-'(_ .',-.,-.,-.
+ `-----' `------' `------'       `--'       `-----'  `-----'   '-''-''-'
+)";
+}
 bool analyzeParams(int argc, char * argv[]){
     for (int i=1;i<argc;i++)
     {
@@ -73,7 +87,7 @@ bool analyzeParams(int argc, char * argv[]){
         }
         catch(exception ex)
         {
-            cout << "At least one argument has incorrect type\n"<<endl;
+            cerr << "At least one argument has incorrect type\n"<<endl;
             exit(INCORRECT_PARAM);
         }
     }
@@ -87,7 +101,7 @@ bool analyzeParamsBounds(int time, int items, int customers,int waiters){
         (customers>=0 && customers<=10)&&
         (waiters>=0 && waiters<=3))
         return true;
-    cout << "One of params out of allowed boundaries\n";
+    cerr << "One of params out of allowed boundaries\n";
     exit(INCORRECT_PARAM);
 
 
@@ -112,11 +126,13 @@ void createMenuItems(int itemsAmount){
 
     itemsVectorToShmem(menuItems,itemsShmid);
 
-    printMenu(itemsSegptr);
+    cout << "============= Menu ============="<<endl;
+    cout << "ID" <<setw(7)<<"Name"<<setprecision(5)<<setw(8)<<fixed<< setprecision(2)<<"Price" <<setw(3)<<"Orders" <<endl;
+    for(vector<MenuItem>::iterator it = menuItems.begin();it!=menuItems.end();++it)
+        cout << it->getID()+1<<setw(15)<< it->getName()<<setprecision(5)<<setw(8)<<fixed<< setprecision(2)<<it->getPrice() <<setw(3)<<it->getTotalOrdered() <<endl;
 
-    //remove a shared memory section
-    //IPC_RMID: Marks a segment for removal.
-//    shmctl(itemsShmid, IPC_RMID, 0);
+
+
 }
 
 
@@ -125,16 +141,49 @@ string getTime(){
         gettimeofday(&currentTime,0);
         std::ostringstream os;
         float timestep = (currentTime.tv_sec - startTime.tv_sec) + (float)(currentTime.tv_usec - startTime.tv_usec)/1000000;
-        os <<fixed<< setprecision(4) << timestep << " | ";
+        os <<fixed<< setprecision(4) << timestep << "\t| ";
     return os.str();
 
+}
+
+void createEarningCounter(){
+    allocateSharedMemory(getpid(),&earningsSegptr,&earningsShmid);
+    strcpy(earningsSegptr,"0");
+
+    allocateSharedMemory(getpid(),&orderedAmountSegptr,&orderedAmountShmid);
+    strcpy(orderedAmountSegptr,"0");
+}
+
+void increaseEarnings(float earnedNow){
+    float earnedBefore = atof(earningsSegptr);
+    earnedBefore+=earnedNow;
+    char array[15];
+    sprintf(array, "%f", earnedBefore);
+    strcpy(earningsSegptr,array);
+
+}
+
+
+void increaseOrdersAmount(int orderedNow){
+    int orderedBefore = atoi(orderedAmountSegptr);
+    orderedBefore+=orderedNow;
+    char array[15];
+    sprintf(array, "%d", orderedBefore);
+    strcpy(orderedAmountSegptr,array);
 }
 
 
 void createOrdersBoards(int boardsAmount){
 
-    for (int i=0;i<boardsAmount;i++)
-        boards.push_back(OrderBoard(i));
+
+    allocateSharedMemory(getpid(),&ordersSegptr,&ordersShmid);
+    vector<OrderBoard> orderBoard;
+    for (int i =0; i< boardsAmount;i++)
+        orderBoard.push_back(OrderBoard(i,-1,0,true));
+
+    ordersVectorToShmem(orderBoard,ordersShmid);
+
+    createEarningCounter();
 
 }
 
@@ -164,12 +213,12 @@ void startClientsProcesses(int clientsSize, int waitersSize){
 
     if(pid ==-1)
     {
-        cout << "fork() error\n";
+        cerr << "fork() error\n";
         exit(1);
     }
 
     if (type==WAITER)
-        manageWaiters(getpid());
+        manageWaiters(getpid(),myID);
     else if (type == CUSTOMER)
         manageCustomers(getpid(),myID);
     else
@@ -181,53 +230,154 @@ void startClientsProcesses(int clientsSize, int waitersSize){
 
 }
 
+float getRandomSleepTime(int min,int max){
+    std::random_device  gen;
+    std::uniform_real_distribution<> uid(min, max);
+    return uid(gen)*1000000; // for seconds
+
+}
+
 int getRandNum(int min,int max){
     std::random_device  gen;
     std::uniform_int_distribution<> uid(min, max);
     return uid(gen);
-
-
-
-
 }
 
 bool isTimedOut(){
     return (simulationDuration<(currentTime.tv_sec-startTime.tv_sec));
 }
 
+bool isPrevOrderDone(int custID){
+
+    if(!isTimedOut()) {
+
+        vector<OrderBoard> orders = ordersShmemToVector();
+        for (vector<OrderBoard>::iterator it = orders.begin(); it != orders.end(); ++it)
+            if (custID == it->getCustomerId()) {
+                if (it->isDone() == true)
+                    return true;
+                 else
+                    return false;
+
+            }
+        orders.clear();
+    }
+
+    return false;
+}
+
 void manageCustomers(pid_t pid,int id){
-    int sleepTime;
+    float sleepTime;
 
     while (!isTimedOut()){
-        sleepTime = getRandNum(3,6);
-        sleep(sleepTime);
-        p(customersSem);
-        vector<MenuItem> menu =  shmemToVector();
-        MenuItem itemToOrder = randomChooseItem(menu);
-        cout << getTime()<< "Customer "<<id << ": reads menu about "<<itemToOrder.getName();
-        bool isOrdered = (getRandNum(0,1)==1)?true:false;
-        sleep(1);
 
-        if(isOrdered){
-            int amount = getRandNum(1,4);
-            cout << "( ordered, amount "<<amount<<" )\n";
-            updateOrderedAmount(menu,itemToOrder.getID(),amount);
+        sleepTime = getRandomSleepTime(3,6);
+        usleep(sleepTime);
+
+        if (!isPrevOrderDone(id)){
+            continue;
         }
-        else
-            cout << "( doesn't want to order )"<<endl;
-        v(customersSem);
+        else {
+                vector<MenuItem> menu = itemsShmemToVector();
+                MenuItem itemToOrder = randomChooseItem(menu);
+
+                bool isOrdered = (getRandNum(0, 1) == 1) ? true : false;
+
+                   // reads menu
+                if (isOrdered) {
+                    p(customersSem);
+                    cout << getTime() << "Customer " << id << ": reads menu about " << itemToOrder.getName();
+                    sleep(1);
+                    int amount = getRandNum(1, 4);
+                    cout << "( ordered, amount " << amount << " )\n";
+                    v(customersSem);
+
+                    // only one customer can add items to board, and must to block entrance to orders for other processes
+                    p(customersSem);
+                    p(ordersSem);
+                    addOrderToBoard(id, itemToOrder.getID(), amount);
+                    v(ordersSem);
+                    v(customersSem);
+
+                } else {
+
+                    cout << getTime() << "Customer " << id << ": reads menu about " << itemToOrder.getName();
+
+                    sleep(1);
+
+                    cout << "( doesn't want to order )" << endl;
+
+
+                }
+
+        }
     }
+
+
+    cout << getTime()<<"Customer ID "<<id<< " PID "<<getpid()<<" end work PPID "<<getppid()<<endl;
 
 }
 
-void manageWaiters(pid_t pid){
+
+//bool isThereUndoneOrders(){
+//    vector<OrderBoard> orders = ordersShmemToVector();
+//    for(vector<OrderBoard>::iterator it = orders.begin();it!=orders.end();++it)
+//        if(it->isDone()==false)
+//            return true;
+//
+//    return false;
+//}
+
+void manageWaiters(pid_t pid,int waiterID){
     int sleepTime;
     while (!isTimedOut()){
-        sleepTime = getRandNum(3,6);
-        sleep(sleepTime);
-        cout << getTime()<<"waiter "<<pid<< " after sleep "<< sleepTime<<endl;
+        sleepTime = getRandomSleepTime(1,2);
+        usleep(sleepTime);
+
+        vector<OrderBoard> orders = ordersShmemToVector();
+
+        for(vector<OrderBoard>::iterator it = orders.begin();it!=orders.end();++it){
+            if(!it->isDone())
+            {
+
+                cout << getTime()<<"Waiter ID "<<waiterID<< ": performes the order of customer "<<it->getCustomerId()<<" ("<<it->getAmount()<<" "<<ItemNameList[it->getItemId()]<<")\n";
+
+                vector<MenuItem> menu =  itemsShmemToVector();
+
+                updateOrderedAmount(menu,it->getItemId(),it->getAmount());
+                it->setDone(true);
+                ordersVectorToShmem(orders,ordersShmid);
+
+            }
+        }
+
+        orders.clear();
+
     }
+
+    cout << getTime()<<"Waiter ID "<<waiterID<< " PID "<<getpid()<<" end work PPID "<<getppid()<<endl;
+
 }
+
+
+void manageMainProcess(pid_t pid){
+    menuItems.clear();
+
+    menuItems = itemsShmemToVector();
+    cout << "============= Menu ============="<<endl;
+    cout << "ID" <<setw(15)<< "Name"<<setprecision(5)<<setw(8)<<fixed<< setprecision(2)<<"Price" <<setw(3)<<"Orders" <<endl;
+    for(vector<MenuItem>::iterator it = menuItems.begin();it!=menuItems.end();++it)
+        cout << it->getID()+1<<setw(15)<< it->getName()<<setprecision(5)<<setw(8)<<fixed<< setprecision(2)<<it->getPrice() <<setw(3)<<it->getTotalOrdered() <<endl;
+
+    cout << "Total earned : "<<atof(earningsSegptr)<<" $\n";
+    cout << "Total orders : "<<orderedAmountSegptr<<endl;
+    cout << getTime() << "Main ID "<<getpid()<< " end work"<<endl;
+    cout << getTime()<<"End of simulation\n";
+
+    endBanner();
+    deleteSemsAndShmems();
+}
+
 
 void printMenu(char* segptr){
     // read from shared memory
@@ -282,17 +432,20 @@ void allocateSharedMemory(pid_t pid,char** segptr, int *shmid){
 
 void deleteSemsAndShmems(){
 shmctl(itemsShmid, IPC_RMID, 0);    // items shmem
+shmctl(ordersShmid, IPC_RMID, 0);    // items shmem
+shmctl(orderedAmountShmid, IPC_RMID, 0);    // items shmem
+shmctl(earningsShmid, IPC_RMID, 0);    // items shmem
+
 semctl(itemsSem, 0, IPC_RMID, 0);   // items sem
 semctl(customersSem, 0, IPC_RMID, 0);   // items sem
+semctl(ordersSem, 0, IPC_RMID, 0);   // orders sem
+semctl(waitersSem, 0, IPC_RMID, 0);   // waiters sem
+semctl(coutSem, 0, IPC_RMID, 0);   // waiters sem
+semctl(reader, 0, IPC_RMID, 0);   // waiters sem
+semctl(writer, 0, IPC_RMID, 0);   // waiters sem
 }
 
-void manageMainProcess(pid_t pid){
-    vector<MenuItem> list = shmemToVector();
-    for(vector<MenuItem>::iterator it = list.begin();it!=list.end();++it)
-        cout<<it->to_string()<<endl;
 
-    deleteSemsAndShmems();
-}
 
 
 MenuItem randomChooseItem(vector<MenuItem> menu)
@@ -302,8 +455,9 @@ MenuItem randomChooseItem(vector<MenuItem> menu)
 
 }
 
+
 // receive line from shmem and sepearate it by '|' delimiter, and create MenuItem object
-MenuItem getTokens(string tokenLine){
+MenuItem getItemTokens(string tokenLine){
     list<string> tokens;
     std::stringstream ss(tokenLine);
     std::string token;
@@ -312,43 +466,84 @@ MenuItem getTokens(string tokenLine){
         tokens.push_back(token);
     }
 
-    int id =  atoi(tokens.front().c_str());
-    tokens.pop_front();
-    string name = tokens.front();
-    tokens.pop_front();
-    float price = stof(tokens.front());
-    tokens.pop_front();
-    int orders =  atoi(tokens.front().c_str());
-    tokens.pop_front();
+
+        int id = atoi(tokens.front().c_str());
+        tokens.pop_front();
+        string name = tokens.front();
+        tokens.pop_front();
+        float price = stof(tokens.front());
+        tokens.pop_front();
+        int orders = atoi(tokens.front().c_str());
+        tokens.pop_front();
+
+        return MenuItem(id, name, price, orders);
 
 
+}
 
-    return MenuItem(id,name,price,orders);
+// receive line from shmem and sepearate it by '|' delimiter, and create OrderBoard object
+OrderBoard getOrderTokens(string tokenLine){
+    list<string> tokens;
+    std::stringstream ss(tokenLine);
+    std::string token;
+
+    while(std::getline(ss,token,'|')){
+        tokens.push_back(token);
+    }
+
+    int customerID = atoi(tokens.front().c_str());
+    tokens.pop_front();
+    int itemID = atoi(tokens.front().c_str());
+    tokens.pop_front();
+
+    int amount = atoi(tokens.front().c_str());
+    tokens.pop_front();
+
+    int done = atoi(tokens.front().c_str());
+    tokens.pop_front();
+    bool isDone = (done==1)? true : false;
+    return OrderBoard(customerID,itemID,amount,isDone);
 }
 
 
 // for friendly use, get data from shared memory and convert into vector array
-vector<MenuItem> shmemToVector(){
+vector<MenuItem> itemsShmemToVector(){
     vector<MenuItem> itemsList;
 
-    p(itemsSem);
     std::stringstream ss(itemsSegptr);
     std::string token;
     if (itemsSegptr != NULL)
     {
         while(std::getline(ss,token,'\n')){
-            MenuItem item = getTokens(token);
+            MenuItem item = getItemTokens(token);
             itemsList.push_back(item);
 
         }
     }
-    v(itemsSem);
+
     return itemsList;
 }
+
+
+vector<OrderBoard> ordersShmemToVector(){
+    vector<OrderBoard> ordersList;
+
+    std::stringstream ss(ordersSegptr);
+    std::string token;
+    if (ordersSegptr != NULL)
+    {
+        while(std::getline(ss,token,'\n')){
+            OrderBoard item = getOrderTokens(token);
+            ordersList.push_back(item);
+
+        }
+    }
+
+    return ordersList;
+}
+
 void itemsVectorToShmem(vector<MenuItem> items,int itemsshmID){
 
-
-    p(itemsSem);
 
     strcpy(itemsSegptr,"");
     for(vector<MenuItem>::iterator it = items.begin();it!=items.end();++it)
@@ -356,9 +551,22 @@ void itemsVectorToShmem(vector<MenuItem> items,int itemsshmID){
         //write to shared memory
         strcat(itemsSegptr, it->to_string().c_str());
         strcat(itemsSegptr,"\n");
-
     }
-    v(itemsSem);
+
+
+}
+
+void ordersVectorToShmem(vector<OrderBoard> items,int ordersShmemID){
+
+
+    strcpy(ordersSegptr,"");
+    for(vector<OrderBoard>::iterator it = items.begin();it!=items.end();++it)
+    {
+        //write to shared memory
+        strcat(ordersSegptr, it->to_string().c_str());
+        strcat(ordersSegptr,"\n");
+    }
+
 
 }
 
@@ -366,9 +574,14 @@ void updateOrderedAmount(vector<MenuItem> items, int itemID,int amount){
 
     for (vector<MenuItem>::iterator it = items.begin();it!=items.end();++it)
         if (it->getID()==itemID)
+        {
             it->setTotalOrdered(it->getTotalOrdered()+amount);
+            increaseEarnings(it->getPrice()*amount);
+            increaseOrdersAmount(amount);
+        }
 
     itemsVectorToShmem(items,itemsShmid);
+
 }
 
 void initAllSemaphores(){
@@ -381,6 +594,49 @@ void initAllSemaphores(){
     if((customersSem=initsem(semkey,1))<0)
         exit(1);
 
+    semkey   = ftok(".", getRandNum(0,100000));
+    if((ordersSem=initsem(semkey,1))<0)
+        exit(1);
+
+    semkey   = ftok(".", getRandNum(0,100000));
+    if((waitersSem=initsem(semkey,1))<0)
+        exit(1);
+    semkey   = ftok(".", getRandNum(0,100000));
+    if((coutSem=initsem(semkey,1))<0)
+        exit(1);
+
+
+    semkey   = ftok(".", getRandNum(0,100000));
+    if((reader=initsem(semkey,1))<0)
+        exit(1);
+
+    semkey   = ftok(".", getRandNum(0,100000));
+    if((writer=initsem(semkey,1))<0)
+        exit(1);
+
 }
+
+
+void addOrderToBoard(int customerID, int itemID,int amount){
+
+    vector<OrderBoard> ordersList = ordersShmemToVector();
+
+    for(vector<OrderBoard>::iterator it = ordersList.begin();it!=ordersList.end();++it)
+        if(it->getCustomerId() == customerID)
+        {
+            it->setItemId(itemID);
+            it->setAmount(amount);
+            it->setDone(false);
+        }
+
+    ordersVectorToShmem(ordersList,ordersShmid);
+
+
+
+
+
+}
+
+
 
 #endif //HW3_EX3_H

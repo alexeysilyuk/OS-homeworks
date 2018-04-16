@@ -24,6 +24,19 @@ public:
 
 
     OrderBoard(int customerID):CustomerId(customerID){};
+    OrderBoard(int custID, int itemID,int amount, bool isDone){
+        setCustomerId(custID);
+        setItemId(itemID);
+        setAmount(amount);
+        setDone(isDone);
+    }
+
+    std::string to_string(){
+        std::ostringstream oss;
+        oss<< CustomerId<<"|"<<ItemId<<"|"<<Amount<<"|"<<isDone();
+
+        return oss.str();
+    }
 
 };
 

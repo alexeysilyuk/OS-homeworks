@@ -7,6 +7,23 @@
 using namespace std;
 
 
+void startBanner(){
+cout << R"(
+ /==================================================\
+||      ::::            `....            `::::      ||
+||      -:::            .::::            `:::-      ||  Welcome
+||      `:::`           -::::`           -:::`      ||  To my restaurant
+||       .::-           :::::.           :::.       ||    dear customer!
+||        -::`         .::-:::          -::.        ||     Enjoy !
+||         -::`        ::: `::.        .::.         ||
+||          .::.      -:-   `::.      -::`          ||
+||            .:-.``.::.      .:-```.:-.            ||
+||              `....`          `...`               ||
+ \==================================================/)";
+    cout<<endl;
+}
+
+
 
 int main(int argc, char* argv[]) {
 
@@ -26,6 +43,8 @@ int main(int argc, char* argv[]) {
     // check received parameters boundaries
     analyzeParamsBounds(simulationDuration,menuItemsCount,customersCount,waitersCount);
 
+
+    startBanner();
 
     cout << "===== Simulation arguments =====" << endl;
     cout << "Simulation time: "<<simulationDuration<<endl;
@@ -48,11 +67,13 @@ int main(int argc, char* argv[]) {
     createOrdersBoards(customersCount);
 
     startClientsProcesses(customersCount,waitersCount);
+//    initOrderBoards(customersCount);
 
 
 
     // free allocated memory
 //    FreeMenuItemsMemory(menuItemsCount);
+
     return 0;
 }
 
