@@ -88,24 +88,25 @@ int p(int semid)
         exit(1);
     }
     else
-    {
-        return (0);
-    }
-
+        return 0;
 
 }
 
 void v(int semid)
 {
-	struct sembuf v_buf;
-	v_buf.sem_num = 0;
-	v_buf.sem_op = 1;
-	v_buf.sem_flg = SEM_UNDO;
+    struct sembuf sops;
+    sops.sem_num = 0;
+    sops.sem_op = 1;
+    sops.sem_flg = SEM_UNDO;
 
-	if(semop( semid, &v_buf, 1 ) == -1 )
-	{
-		perror("v(semid) failed");
-		exit(1);
-	}
+    if (semop(semid,&sops,1)==-1)
+    {
+        perror("v(semid) failed");
+        exit(1);
+    }
+    else
+        return;
+
+
 }
 #endif //HW3_SEMAPHORE_H

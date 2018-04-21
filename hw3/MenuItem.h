@@ -20,8 +20,9 @@ private:
     std::string Name;
 
 public:
-    void setID(int _id){ID=_id;}
-    int getID(){ return ID;}
+    void setID(int _id)    {ID=_id;}
+    int getID()    { return ID;}
+
     bool setPrice(float price)
     {
         if(price<=100)
@@ -31,21 +32,36 @@ public:
         }
         return false;
     }
-    float getPrice(){return Price;}
-    bool setName(std::string name){
+
+
+    float getPrice()
+    {
+        return Price;
+    }
+
+
+    bool setName(std::string name)
+    {
         if(name.size()<=15)
         {
             Name=name;
             return true;
         }
         return false;
-        }
-    std::string getName(){return Name;}
+    }
+
+
+    std::string getName()
+    {
+        return Name;
+    }
 
     int getTotalOrdered(){return TotalOrdered;}
+
     void setTotalOrdered(int TotalOrdered) {
         MenuItem::TotalOrdered = TotalOrdered;
     }
+
     MenuItem(int id, std::string name, float price){
         setID(id);
         setName(name);
@@ -59,6 +75,7 @@ public:
         setTotalOrdered(orders);
     }
 
+    // convert element to string
     std::string to_string(){
         std::ostringstream oss;
         oss<< ID<<"|"<<Name<<"|"<<Price<<"|"<<TotalOrdered;

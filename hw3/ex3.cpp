@@ -6,15 +6,15 @@
 
 using namespace std;
 
-
+// welcome banner
 void startBanner(){
 cout << R"(
  /==================================================\
 ||      ::::            `....            `::::      ||
-||      -:::            .::::            `:::-      ||  Welcome
-||      `:::`           -::::`           -:::`      ||  To my restaurant
-||       .::-           :::::.           :::.       ||    dear customer!
-||        -::`         .::-:::          -::.        ||     Enjoy !
+||      -:::            .::::            `:::-      ||  Welcome !
+||      `:::`           -::::`           -:::`      ||      To my restaurant
+||       .::-           :::::.           :::.       ||      dear customer!
+||        -::`         .::-:::          -::.        ||          Enjoy !
 ||         -::`        ::: `::.        .::.         ||
 ||          .::.      -:-   `::.      -::`          ||
 ||            .:-.``.::.      .:-```.:-.            ||
@@ -26,6 +26,7 @@ cout << R"(
 
 
 int main(int argc, char* argv[]) {
+
 
     if (argc!=5){
         cout << " Incorrect amount of parameters\n";
@@ -67,12 +68,7 @@ int main(int argc, char* argv[]) {
     createOrdersBoards(customersCount);
 
     startClientsProcesses(customersCount,waitersCount);
-//    initOrderBoards(customersCount);
 
-
-
-    // free allocated memory
-//    FreeMenuItemsMemory(menuItemsCount);
 
     return 0;
 }

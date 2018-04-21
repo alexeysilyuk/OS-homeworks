@@ -31,6 +31,7 @@ public:
         setDone(isDone);
     }
 
+    //converts object ields to string
     std::string to_string(){
         std::ostringstream oss;
         oss<< CustomerId<<"|"<<ItemId<<"|"<<Amount<<"|"<<isDone();
