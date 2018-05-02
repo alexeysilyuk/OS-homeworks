@@ -1,0 +1,18 @@
+//
+// Created by alex on 5/2/18.
+//
+
+#ifndef HW5_MULTI_LOOKUP_H
+#define HW5_MULTI_LOOKUP_H
+
+#include <arpa/inet.h>
+#define MAX_INPUT_FILES 10
+#define MAX_RESOLVER_THREADS 10
+#define MIN_RESOLVER_THREADS 2
+#define MAX_NAME_LENGTH 1025
+#define MAX_IP_LENGTH INET_ADDRSTRLEN
+enum ERROR {INCORRECT_PARAMS_AMOUNT=128};
+
+
+
+#endif //HW5_MULTI_LOOKUP_H
