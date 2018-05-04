@@ -7,30 +7,36 @@
 #include<iostream>
 #include<cstdlib>
 #include <string>
+#include "RWLock.h"
 
 using namespace std;
 
 
 class myQueue
 {
-    private:
+    struct request {
+        string hostname;
+    };
+
+private:
         int size;
-        string *request;
+        request* requests;
         int head;
         int tail;
-        pthread_mutex_t mutex;
+        RWLock rwLock;
 
-    public:
-        myQueue(int x=10):size(x),request(new string[size]),head(-1),tail(-1){
-            pthread_mutex_init(&mutex,NULL);
+public:
+        myQueue(int x=10):size(x),requests(new request[size]),head(-1),tail(-1){
+
         }
 
-        bool push(string x)
+        bool push(string _hostname)
         {
             bool b = 0;
+            rwLock.WriteLock();
             if(isFull())
             {
-                cout << "Queue is full\n";
+                rwLock.WriteUnlock();
                 return false;
             }
             else if(isEmpty()){
@@ -41,54 +47,44 @@ class myQueue
                 tail = (tail + 1) % size;
                 b = true;
             }
-            pthread_mutex_lock(&mutex);
-            request[tail] = x;
-            pthread_mutex_unlock(&mutex);
+            request file;
+            file.hostname=_hostname;
+            requests[tail] = file;
+            rwLock.WriteUnlock();
             return b;
         }
 
-        bool isEmpty()
-        {
-            return (tail == -1 && head == -1 )?true : false;
-        }
-
-
         string pop()
         {
-            pthread_mutex_lock(&mutex);
-
+            rwLock.ReadLock();
             string val;
             if(isEmpty())
             {
-                cerr << "Queue is Empty!";
-                pthread_mutex_unlock(&mutex);
+                rwLock.ReadUnlock();
                 return val;
             }
             else if(head == tail){
-                val = request[head];
+                val = requests[head].hostname;
                 head = -1;
                 tail  = -1;
             }
             else
             {
-                val = request[head];
+                val = requests[head].hostname;
                 head = ( head + 1 ) % size;
             }
+            rwLock.ReadUnlock();
 
-            pthread_mutex_unlock(&mutex);
             return val;
         }
+    bool isEmpty(){  return (tail == -1 && head == -1   ) ? true : false;  }
+    bool isFull(){   return ((tail + 1) %  size == head ) ? true : false;   }
 
-    bool isFull()
-    {
-        return ((tail + 1) %  size == head ) ? true:false;
+
+    ~myQueue(){
+        delete [] requests;
+
     }
-
-
-    ~myQueue()//destructor
-        {
-            delete [] request;
-        }
 
 };
 

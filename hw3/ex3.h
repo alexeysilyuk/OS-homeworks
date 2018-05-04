@@ -631,12 +631,13 @@ void updateOrderedAmount(vector<MenuItem> items, int itemID,int amount){
 void initAllSemaphores(){
 
 
+    key_t semkey;
     // items read/write semaphores
     semkey   = ftok(".", getRandNum(0,100000));
     if((itemsSem=initsem(semkey,1))<0)
         exit(1);
 
-    key_t semkey   = ftok(".", getRandNum(0,100000));
+    semkey   = ftok(".", getRandNum(0,100000));
     if((itemsReadSem=initsem(semkey,1))<0)
         exit(1);
 

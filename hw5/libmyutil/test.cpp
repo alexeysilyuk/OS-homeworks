@@ -10,7 +10,7 @@ int main()
 {
 
 	char ipstr[1024];
-	const char* hostname = "www.ynet.co.il";
+	const char* hostname = "google.com";
 	
 	if(dnslookup(hostname, ipstr, sizeof(ipstr)) == UTIL_FAILURE)
 	{
