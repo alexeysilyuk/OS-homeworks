@@ -14,25 +14,35 @@
 #include <string.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
+
+#define MAX_IP_ADRESSES 10
 extern "C"
 {
 #include "libmyutil/util.h"
 }
 int coutSem;
 int requests=0;
+pthread_mutex_t producer,consumer,mutex;
+pthread_cond_t requester,resolver;
+
+
 class myThreadPool{
 private:
 
     int threadsAmount;
-    pthread_mutex_t producer,consumer;
 
 public:
 
     myThreadPool(int threads)
     {
         threadsAmount=threads;
+
         pthread_mutex_init(&producer,NULL);
         pthread_mutex_init(&consumer,NULL);
+        pthread_mutex_init(&mutex,NULL);
+        pthread_cond_init (&requester, NULL);
+        pthread_cond_init (&resolver, NULL);
+
 
         key_t semkey   = ftok(".", getpid());
         if((coutSem=initsem(semkey,1))<0)
@@ -42,22 +52,24 @@ public:
         shmctl(coutSem, IPC_RMID, 0);    // cout semaphore
          }
 
-    static string resolveIP(string hostname){
-        char ipstr[1024];
+    static char ** resolveIP(string hostname,int * ips_found){
+        char **ipArray = new char*[MAX_IP_ADRESSES];
         const char* host = hostname.c_str();
 
-        if(dnslookup(host, ipstr, sizeof(ipstr)) == UTIL_FAILURE)
+        if(dnslookupAll(host, ipArray,MAX_IP_ADRESSES, ips_found) == UTIL_FAILURE)
         {
-            return "Error";
+            return NULL;
         }
         else
         {
-            return ipstr;
+
+            return ipArray;
         }
     }
 
     static void *putJob(void *filename)
     {
+
         char* file = (char*)filename;
         string line;
         ifstream myfile;
@@ -65,39 +77,60 @@ public:
         while (getline(myfile, line))
         {
             if(!resultsArray->contains(line)) {
-                while (globalQueue->push(line) == false) {
-                    std::random_device gen;
-                    std::uniform_real_distribution<> uid(0, 100);
-                    usleep(uid(gen)); // for miliseconds
-                }
+                if(globalQueue->push(line) == false) {
+                    {
+                        pthread_mutex_lock(&producer);
+                        pthread_cond_wait(&requester,&producer);
+                        globalQueue->push(line);
+                        pthread_mutex_unlock(&producer);
+                    }
+                } else
+                    pthread_cond_signal(&resolver);
             }
         }
+
 //        cout << "finished file : "<<file<<endl;
         myfile.close();
+
         pthread_exit(NULL);
     }
 
 
     static void *getJob(void *filename)
     {
+
         while(true)
         {
             if(!globalQueue->isEmpty()) {
+                pthread_mutex_lock(&consumer);
                 string host = globalQueue->pop();
-                string ip = resolveIP(host);
-                resultsArray->addTail(host,ip);
-                p(coutSem);
-                cout<<host<<" : " << ip << endl;
-                v(coutSem);
+                pthread_cond_signal(&requester);
+
+                int ips_found=0;
+                string ip_all;
+                char** ip = resolveIP(host,&ips_found);
+                if(ip!=NULL)
+                {
+                    for(int i=0;i<ips_found;i++)
+                    {
+                        ip_all+=ip[i];
+                        ip_all+=",";
+                    }
+                    ip_all=ip_all.substr(0,ip_all.size()-1);
+                    resultsArray->addTail(host, ip_all);
+                }
+                else
+                {
+                    resultsArray->addTail(host, "");
+                }
+
+
             }
             else
             {
-//                cout << "no active requests, goint to sleep...\n";
-                sleep(1);
-//                std::random_device  gen;
-//                std::uniform_real_distribution<> uid(0, 100);
-//                usleep(uid(gen)); // for miliseconds
+                pthread_cond_wait(&resolver,&consumer);
             }
+            pthread_mutex_unlock(&consumer);
         }
 //        char* file = (char*)filename;
 //        string line;

@@ -46,6 +46,7 @@ public:
             tail->next=newResult;
             tail=newResult;
         }
+        cout<<host<< ","<<ip<<endl;
         rwLock.WriteUnlock();
     }
 
@@ -69,7 +70,7 @@ public:
         while(temp!=NULL)
         {
             if (hostname.compare(temp->hostname) == 0) {
-                cout << "hostname :" << hostname << " been processed before and has ip: " << temp->ip << endl;
+//                cout << "hostname " << hostname << " been processed before and has ip: " << temp->ip << endl;
                 rwLock.ReadUnlock();
                 return true;
             }
