@@ -37,11 +37,11 @@ public:
     {
         threadsAmount=threads;
 
-        pthread_mutex_init(&producer,NULL);
-        pthread_mutex_init(&consumer,NULL);
-        pthread_mutex_init(&mutex,NULL);
-        pthread_cond_init (&requester, NULL);
-        pthread_cond_init (&resolver, NULL);
+//        pthread_mutex_init(&producer,NULL);
+//        pthread_mutex_init(&consumer,NULL);
+//        pthread_mutex_init(&mutex,NULL);
+//        pthread_cond_init (&requester, NULL);
+//        pthread_cond_init (&resolver, NULL);
 
 
         key_t semkey   = ftok(".", getpid());
@@ -77,15 +77,17 @@ public:
         while (getline(myfile, line))
         {
             if(!resultsArray->contains(line)) {
-                if(globalQueue->push(line) == false) {
-                    {
-                        pthread_mutex_lock(&producer);
-                        pthread_cond_wait(&requester,&producer);
-                        globalQueue->push(line);
-                        pthread_mutex_unlock(&producer);
-                    }
-                } else
-                    pthread_cond_signal(&resolver);
+                globalQueue->push(line);
+//
+//                if(globalQueue->push(line) == false) {
+//                    {
+//                        pthread_mutex_lock(&producer);
+//                        pthread_cond_wait(&requester,&producer);
+//                        globalQueue->push(line);
+//                        pthread_mutex_unlock(&producer);
+//                    }
+//                } else
+//                    pthread_cond_signal(&resolver);
             }
         }
 
@@ -101,11 +103,11 @@ public:
 
         while(true)
         {
-            if(!globalQueue->isEmpty()) {
-                pthread_mutex_lock(&consumer);
-                string host = globalQueue->pop();
-                pthread_cond_signal(&requester);
+//            if(!globalQueue->isEmpty()) {
+//                pthread_mutex_lock(&consumer);
 
+//                pthread_cond_signal(&requester);
+                string host = globalQueue->pop();
                 int ips_found=0;
                 string ip_all;
                 char** ip = resolveIP(host,&ips_found);
@@ -125,12 +127,12 @@ public:
                 }
 
 
-            }
-            else
-            {
-                pthread_cond_wait(&resolver,&consumer);
-            }
-            pthread_mutex_unlock(&consumer);
+//            }
+//            else
+//            {
+//                pthread_cond_wait(&resolver,&consumer);
+//            }
+//            pthread_mutex_unlock(&consumer);
         }
 //        char* file = (char*)filename;
 //        string line;

@@ -6,6 +6,9 @@
 #define HW5_RESULTSARRAY_H
 
 #include <string>
+#include <fstream>
+#include <string>
+#include <iostream>
 #include "RWLock.h"
 
 struct resultNode{
@@ -27,6 +30,13 @@ public:
         tail=NULL;
     }
 
+    void writeToFile(string line){
+        ofstream out("res.txt",ofstream::app);
+        out << line;
+        out.close();
+    }
+
+
     void addTail(string host, string ip)
     {
         rwLock.WriteLock();
@@ -46,7 +56,10 @@ public:
             tail->next=newResult;
             tail=newResult;
         }
-        cout<<host<< ","<<ip<<endl;
+       string line =host+","+ip+'\r';
+        cout<<line<<endl;
+
+        writeToFile(line);
         rwLock.WriteUnlock();
     }
 

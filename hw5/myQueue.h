@@ -10,7 +10,7 @@
 #include "RWLock.h"
 
 using namespace std;
-
+int pops=0,pushs=0;
 
 class myQueue
 {
@@ -24,22 +24,27 @@ private:
         int head;
         int tail;
         RWLock rwLock;
+        pthread_cond_t requester,resolver;
+        pthread_mutex_t producer,consumer;
 
 public:
         myQueue(int x=10):size(x),requests(new request[size]),head(-1),tail(-1){
-
+            pthread_cond_init (&requester, NULL);
+            pthread_cond_init (&resolver, NULL);
+            pthread_mutex_init(&producer,NULL);
+            pthread_mutex_init(&consumer,NULL);
         }
 
         bool push(string _hostname)
         {
             bool b = 0;
-            rwLock.WriteLock();
-            if(isFull())
-            {
-                rwLock.WriteUnlock();
-                return false;
+//            rwLock.WriteLock();
+            pthread_mutex_lock(&producer);
+            while(isFull()){
+                pthread_cond_wait(&requester,&producer);
             }
-            else if(isEmpty()){
+
+            if(isEmpty()){
                 tail = head = 0;
                 b = true;
             }
@@ -50,20 +55,23 @@ public:
             request file;
             file.hostname=_hostname;
             requests[tail] = file;
-            rwLock.WriteUnlock();
+            pthread_cond_signal(&resolver);
+            pthread_mutex_unlock(&producer);
+//            rwLock.WriteUnlock();
             return b;
         }
 
         string pop()
         {
-            rwLock.ReadLock();
+//            rwLock.ReadLock();
+            pthread_mutex_lock(&consumer);
             string val;
-            if(isEmpty())
+            while(isEmpty())
             {
-                rwLock.ReadUnlock();
-                return val;
+                pthread_cond_wait(&resolver,&consumer);
             }
-            else if(head == tail){
+
+            if(head == tail){
                 val = requests[head].hostname;
                 head = -1;
                 tail  = -1;
@@ -73,7 +81,9 @@ public:
                 val = requests[head].hostname;
                 head = ( head + 1 ) % size;
             }
-            rwLock.ReadUnlock();
+            pthread_cond_signal(&requester);
+            pthread_mutex_unlock(&consumer);
+//            rwLock.ReadUnlock();
 
             return val;
         }
