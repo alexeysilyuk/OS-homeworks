@@ -21,19 +21,50 @@ struct resultNode{
 class ResultsArray{
 private:
     resultNode *head, *tail;
-    pthread_rwlock_t rlock,wrlock;
+    pthread_mutex_t rlock,wrlock;
     RWLock rwLock;
-
+    string outputFileName;
+    FILE *file= NULL;
 public:
     ResultsArray(){
         head=NULL;
         tail=NULL;
+        pthread_mutex_init(&rlock,NULL);
+        pthread_mutex_init(&wrlock,NULL);
+    }
+    ~ResultsArray(){
+        pthread_mutex_destroy(&rlock);
+        pthread_mutex_destroy(&wrlock);
     }
 
+    void setOutputFileName(string filename){
+        outputFileName=filename;
+
+        pthread_mutex_lock(&wrlock);
+        file = fopen(filename.c_str(),"w");
+        if (file== NULL)
+        {
+            cerr << "ERROR OPENING FILE \'"<<filename<<"\'\n";;
+            exit(OUTPUT_FILE_NOT_EXISTS);
+        }
+        fclose(file);
+        pthread_mutex_unlock(&wrlock);
+    }
+
+
     void writeToFile(string line){
-        ofstream out("res.txt",ofstream::app);
-        out << line;
-        out.close();
+        pthread_mutex_lock(&wrlock);
+        file = fopen(outputFileName.c_str(),"a");// use "a" for append, "w" to overwrite, previous content will be deleted
+        if (file== NULL)
+        {
+            cerr << "ERROR OPENING AND WRITING TO FILE\n";
+            exit(OUTPUT_FILE_NOT_EXISTS);
+        }
+
+        fprintf(file,"%s",line.c_str());// newline
+
+        fclose (file); // must close after opening
+        pthread_mutex_unlock(&wrlock);
     }
 
 
@@ -57,7 +88,7 @@ public:
             tail=newResult;
         }
        string line =host+","+ip+'\r';
-        cout<<line<<endl;
+//        cout<<line<<endl;
 
         writeToFile(line);
         rwLock.WriteUnlock();
@@ -79,7 +110,7 @@ public:
         rwLock.ReadLock();
         resultNode *temp;
         temp=head;
-        pthread_rwlock_rdlock(&rlock);
+
         while(temp!=NULL)
         {
             if (hostname.compare(temp->hostname) == 0) {

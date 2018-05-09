@@ -15,4 +15,6 @@ struct argvc{
 
 myQueue* globalQueue = new myQueue(10);
 ResultsArray* resultsArray = new ResultsArray();
+
+int finishedFiles=0,totalFiles;
 #endif //HW5_GLOBALQUEUE_H

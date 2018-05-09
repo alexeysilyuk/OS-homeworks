@@ -24,12 +24,13 @@ int coutSem;
 int requests=0;
 pthread_mutex_t producer,consumer,mutex;
 pthread_cond_t requester,resolver;
-
+pthread_mutex_t finished;
 
 class myThreadPool{
 private:
 
     int threadsAmount;
+
 
 public:
 
@@ -37,6 +38,7 @@ public:
     {
         threadsAmount=threads;
 
+        pthread_mutex_init(&finished,NULL);
 //        pthread_mutex_init(&producer,NULL);
 //        pthread_mutex_init(&consumer,NULL);
 //        pthread_mutex_init(&mutex,NULL);
@@ -71,42 +73,50 @@ public:
     {
 
         char* file = (char*)filename;
+
         string line;
         ifstream myfile;
+
         myfile.open(file);
+
         while (getline(myfile, line))
         {
             if(!resultsArray->contains(line)) {
                 globalQueue->push(line);
-//
-//                if(globalQueue->push(line) == false) {
-//                    {
-//                        pthread_mutex_lock(&producer);
-//                        pthread_cond_wait(&requester,&producer);
-//                        globalQueue->push(line);
-//                        pthread_mutex_unlock(&producer);
-//                    }
-//                } else
-//                    pthread_cond_signal(&resolver);
             }
         }
 
-//        cout << "finished file : "<<file<<endl;
         myfile.close();
 
+        myfile.open(file);
+            while (getline(myfile, line))
+            {
+                while (!resultsArray->contains(line));
+            }
+        myfile.close();
+
+        pthread_mutex_lock(&finished);
+        finishedFiles++;
+        pthread_mutex_unlock(&finished);
+
+//return 0;
         pthread_exit(NULL);
     }
 
 
     static void *getJob(void *filename)
     {
-
         while(true)
         {
-//            if(!globalQueue->isEmpty()) {
-//                pthread_mutex_lock(&consumer);
 
-//                pthread_cond_signal(&requester);
+            pthread_mutex_lock(&finished);
+            if(finishedFiles==totalFiles)
+            {
+                cout <<finishedFiles<<" / "<<totalFiles<<endl;
+                pthread_mutex_unlock(&finished);
+                break;
+            }
+            pthread_mutex_unlock(&finished);
                 string host = globalQueue->pop();
                 int ips_found=0;
                 string ip_all;
@@ -123,31 +133,11 @@ public:
                 }
                 else
                 {
+                    cerr <<host<< " : IP address for domain not found"<<endl;
                     resultsArray->addTail(host, "");
                 }
-
-
-//            }
-//            else
-//            {
-//                pthread_cond_wait(&resolver,&consumer);
-//            }
-//            pthread_mutex_unlock(&consumer);
+        cout << pthread_self()<<endl;
         }
-//        char* file = (char*)filename;
-//        string line;
-//        ifstream myfile;
-//        myfile.open(file);
-//        while (getline(myfile, line))
-//        {
-//            while(globalQueue->pop()==false)
-//            {
-//                std::random_device  gen;
-//                std::uniform_real_distribution<> uid(0, 100);
-//                usleep(uid(gen)); // for miliseconds
-//            }
-//        }
-//        myfile.close();
 
         pthread_exit(NULL);
     }
@@ -158,24 +148,34 @@ public:
         for (int i=1,j=0;i<globalargc-1;i++,j++)
         {
             argv[j]= strdup(new_chars[i]);
-//            cout << argv[i]<<endl;
         }
 
-
-        pthread_t workingThreads[globalargc-2];
+        pthread_t workingThreads[totalFiles];
 
         int rc;
         // creating requests threads
-        for(int i = 0; i < globalargc-1; i++)
+        for(int i = 0; i < totalFiles; i++)
         {
-
             rc = pthread_create(&workingThreads[i],NULL, putJob, argv[i]);
             if(rc)
             {
-                cout <<"creating Request thread failed! Error code returned is:"+rc<<endl;
-                exit(-1);
+                cout <<"ERROR in pthread_create() :"+rc<<endl;
+                exit(PTHREAD_CREATE_ERROR);
             }
         }
+
+        void *status;
+
+//        for(int i = 0; i < totalFiles; i++)
+//        {
+//            rc = pthread_join(workingThreads[i], &status);
+//            if (rc)
+//            {
+//                cout<<"ERROR in pthread_join() : "<< rc <<endl;
+//                exit(PTHREAD_JOIN_ERROR);
+//            }
+//        }
+
         pthread_exit(NULL);
     }
 
@@ -192,10 +192,24 @@ public:
             rc = pthread_create(&workingThreads[i],NULL, getJob, &i);
             if(rc)
             {
-                cout <<"creating Request thread failed! Error code returned is:"+rc<<endl;
-                exit(-1);
+                cout <<"ERROR in pthread_create() :"+rc<<endl;
+                exit(PTHREAD_CREATE_ERROR);
             }
         }
+
+        void* status;
+
+//        for(int i = 0; i < MAX_RESOLVER_THREADS; i++)
+//        {
+//            rc = pthread_join(workingThreads[i], &status);
+//            if (rc)
+//            {
+//                cout<<"ERROR in pthread_join() : "<< rc <<endl;
+//                exit(PTHREAD_JOIN_ERROR);
+//            }
+//        }
+
+
         pthread_exit(NULL);
     }
 

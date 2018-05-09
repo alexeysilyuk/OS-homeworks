@@ -31,16 +31,28 @@ int main(int argc, char* argv[]) {
 
     int filesAmount;
 
-    cout <<argc<<endl;
-    for(int i=0;i<argc;i++){
-        cout << "argc: "<<i<<", argv["<<i<<"] : "<<argv[i]<<endl;
-    }
+    cout <<"files received: "<<argc-2<<endl;
+    cout << "--------------------------------------\n";
+    for(int i=1;i<argc-1;i++){
 
+        FILE *file=fopen(argv[i],"r");
+        if(file==NULL)
+        {
+            cerr << "can't open file to read \""<<argv[i]<<"\""<<endl;
+            exit(IMPORT_FILE_READ_ERROR);
+        } else
+            cout <<i<<": \""<<argv[i]<<"\""<<endl;
+    }
+    cout << "--------------------------------------\n";
     if(argc-2>=1)
     {
         filesAmount=argc-2;
+        totalFiles=filesAmount;
+        resultsArray->setOutputFileName(argv[argc-1]);
+
         myThreadPool *requestsPool = new myThreadPool(filesAmount);
         myThreadPool *resolversPool = new myThreadPool(10);
+
 
         globalargc=argc;
         pthread_t pc[2];
@@ -49,24 +61,29 @@ int main(int argc, char* argv[]) {
                 rc = pthread_create(&pc[0], NULL,requestsPool->AquireRequests , argv);
                 if (rc) {
                     cout << "creating Request thread failed! Error code returned is:" + rc << endl;
-                    exit(-1);
+                    exit(PTHREAD_CREATE_ERROR);
                 }
 
             int i;
                 rc = pthread_create(&pc[1], NULL,resolversPool->ServeRequest , &i);
                 if (rc) {
                     cout << "creating Request thread failed! Error code returned is:" + rc << endl;
-                    exit(-1);
+                    exit(PTHREAD_CREATE_ERROR);
                 }
-        void *status;
-        pthread_exit(NULL);
-//        for(int i=0; i < 2; i++) {
+
+        void* status;
+//        for(int i = 0; i < 2; i++)
+//        {
 //            rc = pthread_join(pc[i], &status);
-//            if (rc) {
-//                cout << "ERROR; return code from pthread_join() is " << rc << endl;
-//                exit(-1);
+//            if (rc)
+//            {
+//                cout<<"ERROR in pthread_join() : "<< rc <<endl;
+//                exit(PTHREAD_JOIN_ERROR);
 //            }
 //        }
+
+        cout <<"END"<<endl;
+        pthread_exit(NULL);
     }
 
 
