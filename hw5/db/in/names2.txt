@@ -5,7 +5,6 @@ yahoo.co.jp
 sohu.com
 apple.com
 hao123.com
-8990210hjiwhau8yea.com
 ebay.com
 pps.tv
 xunlei.com
@@ -17,4 +16,3 @@ tmall.com
 ku6.com
 rakuten.co.jp
 about.com
-orkut.com.br
