@@ -10,12 +10,15 @@
 #include "RWLock.h"
 
 using namespace std;
-int pops=0,pushs=0;
+
+pthread_cond_t requestersCondVar;
 
 class myQueue
 {
     struct request {
         string hostname;
+        pthread_mutex_t* threadMutex;
+        pthread_cond_t* taskDoneCond;
     };
 
 private:
@@ -34,13 +37,19 @@ public:
             pthread_mutex_init(&producer,NULL);
             pthread_mutex_init(&consumer,NULL);
         }
-
-        bool push(string _hostname)
+    ~myQueue(){
+        delete [] requests;
+        pthread_cond_destroy(&requester);
+        pthread_cond_destroy(&resolver);
+        pthread_mutex_destroy(&producer);
+        pthread_mutex_destroy(&consumer);
+    }
+        bool push(string _hostname,pthread_cond_t *cond, pthread_mutex_t *mutex)
         {
             bool b = 0;
 //            rwLock.WriteLock();
             pthread_mutex_lock(&producer);
-            while(isFull()){
+            if(isFull()){
                 pthread_cond_wait(&requester,&producer);
             }
 
@@ -54,6 +63,8 @@ public:
             }
             request file;
             file.hostname=_hostname;
+            file.taskDoneCond=cond;
+            file.threadMutex=mutex;
             requests[tail] = file;
             pthread_cond_signal(&resolver);
             pthread_mutex_unlock(&producer);
@@ -63,24 +74,30 @@ public:
 
         string pop()
         {
+            pthread_cond_t * cond;
 //            rwLock.ReadLock();
             pthread_mutex_lock(&consumer);
             string val;
-            while(isEmpty())
+            if(isEmpty())
             {
                 pthread_cond_wait(&resolver,&consumer);
             }
 
             if(head == tail){
                 val = requests[head].hostname;
+                cond=requests[head].taskDoneCond;
                 head = -1;
                 tail  = -1;
             }
             else
             {
                 val = requests[head].hostname;
+                cond=requests[head].taskDoneCond;
                 head = ( head + 1 ) % size;
             }
+            if(cond!=NULL)
+                pthread_cond_signal(cond);
+
             pthread_cond_signal(&requester);
             pthread_mutex_unlock(&consumer);
 //            rwLock.ReadUnlock();
@@ -91,10 +108,7 @@ public:
     bool isFull(){   return ((tail + 1) %  size == head ) ? true : false;   }
 
 
-    ~myQueue(){
-        delete [] requests;
 
-    }
 
 };
 

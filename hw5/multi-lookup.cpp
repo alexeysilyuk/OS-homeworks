@@ -22,6 +22,8 @@
 using namespace std;
 
 
+
+
 int main(int argc, char* argv[]) {
 
     if(argc<2){
@@ -46,19 +48,24 @@ int main(int argc, char* argv[]) {
     cout << "--------------------------------------\n";
     if(argc-2>=1)
     {
-        filesAmount=argc-2;
-        totalFiles=filesAmount;
-        resultsArray->setOutputFileName(argv[argc-1]);
+        totalFiles=argc-2;
 
-        myThreadPool *requestsPool = new myThreadPool(filesAmount);
+
+        resultsArray->setOutputFileName(argv[argc-1]);
+        myThreadPool *requestsPool = new myThreadPool(totalFiles);
         myThreadPool *resolversPool = new myThreadPool(10);
 
 
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+
+        // create one thread for requesters and one thread for resolvers
         globalargc=argc;
         pthread_t pc[2];
         int rc;
 
-                rc = pthread_create(&pc[0], NULL,requestsPool->AquireRequests , argv);
+                rc = pthread_create(&pc[0], &attr,requestsPool->AquireRequests , argv);
                 if (rc) {
                     cout << "creating Request thread failed! Error code returned is:" + rc << endl;
                     exit(PTHREAD_CREATE_ERROR);
@@ -72,30 +79,19 @@ int main(int argc, char* argv[]) {
                 }
 
         void* status;
-//        for(int i = 0; i < 2; i++)
-//        {
-//            rc = pthread_join(pc[i], &status);
-//            if (rc)
-//            {
-//                cout<<"ERROR in pthread_join() : "<< rc <<endl;
-//                exit(PTHREAD_JOIN_ERROR);
-//            }
-//        }
+        for(int i = 0; i < 2; i++)
+        {
+            rc = pthread_join(pc[i], &status);
+            if (rc)
+            {
+                cout<<"ERROR in pthread_join() : "<< rc <<endl;
+                exit(PTHREAD_JOIN_ERROR);
+            }
+        }
 
         cout <<"END"<<endl;
         pthread_exit(NULL);
     }
-
-
-
-
-
-
-
-
-//    while(!requestQueue.isEmpty())
-//        cout << requestQueue.pop()<<endl;
-
 
     return 0;
 }

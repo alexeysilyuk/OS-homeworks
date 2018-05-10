@@ -88,22 +88,11 @@ public:
             tail=newResult;
         }
        string line =host+","+ip+'\r';
-//        cout<<line<<endl;
-
+        cout << line<<endl;
         writeToFile(line);
         rwLock.WriteUnlock();
     }
 
-    void printList()
-    {
-        resultNode *temp=new resultNode;
-        temp=head;
-        while(temp!=NULL)
-        {
-            cout<<temp->hostname<<":"<<temp->ip<<endl;
-            temp=temp->next;
-        }
-    }
 
     bool contains(string hostname)
     {
@@ -118,8 +107,6 @@ public:
                 rwLock.ReadUnlock();
                 return true;
             }
-
-
             temp=temp->next;
         }
         rwLock.ReadUnlock();

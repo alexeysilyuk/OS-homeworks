@@ -15,22 +15,19 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 
-#define MAX_IP_ADRESSES 10
+
 extern "C"
 {
 #include "libmyutil/util.h"
 }
-int coutSem;
-int requests=0;
-pthread_mutex_t producer,consumer,mutex;
-pthread_cond_t requester,resolver;
-pthread_mutex_t finished;
+
+ pthread_mutex_t producer,consumer,mutex;
+ pthread_mutex_t mutexProducers,mutexConsumers;
 
 class myThreadPool{
 private:
 
     int threadsAmount;
-
 
 public:
 
@@ -38,42 +35,36 @@ public:
     {
         threadsAmount=threads;
 
-        pthread_mutex_init(&finished,NULL);
-//        pthread_mutex_init(&producer,NULL);
-//        pthread_mutex_init(&consumer,NULL);
-//        pthread_mutex_init(&mutex,NULL);
-//        pthread_cond_init (&requester, NULL);
-//        pthread_cond_init (&resolver, NULL);
+        pthread_mutex_init(&producer,NULL);
+        pthread_mutex_init(&consumer,NULL);
+        pthread_mutex_init(&mutexProducers,NULL);
+        pthread_mutex_init(&mutexConsumers,NULL);
 
 
-        key_t semkey   = ftok(".", getpid());
-        if((coutSem=initsem(semkey,1))<0)
-            exit(1);
     }
     ~myThreadPool(){
-        shmctl(coutSem, IPC_RMID, 0);    // cout semaphore
+        pthread_mutex_destroy(&producer);
+        pthread_mutex_destroy(&consumer);
+        pthread_mutex_destroy(&mutexProducers);
+        pthread_mutex_destroy(&mutexConsumers);
          }
 
-    static char ** resolveIP(string hostname,int * ips_found){
+    static char ** resolveIP(string hostname, int* ips_found)
+    {
         char **ipArray = new char*[MAX_IP_ADRESSES];
         const char* host = hostname.c_str();
 
         if(dnslookupAll(host, ipArray,MAX_IP_ADRESSES, ips_found) == UTIL_FAILURE)
-        {
             return NULL;
-        }
         else
-        {
-
             return ipArray;
-        }
     }
 
     static void *putJob(void *filename)
     {
-
         char* file = (char*)filename;
-
+        pthread_cond_t cond=PTHREAD_COND_INITIALIZER;
+        pthread_mutex_t resultMutex;
         string line;
         ifstream myfile;
 
@@ -82,42 +73,38 @@ public:
         while (getline(myfile, line))
         {
             if(!resultsArray->contains(line)) {
-                globalQueue->push(line);
-            }
-        }
 
+                pthread_mutex_lock(&mutexProducers);
+                pthread_mutex_lock(&producer);
+                globalQueue->push(line,&cond,&mutexProducers);
+
+                pthread_mutex_unlock(&consumer);
+                pthread_cond_wait(&cond,&mutexProducers);
+
+                pthread_mutex_unlock(&mutexProducers);
+                }
+            }
         myfile.close();
 
-        myfile.open(file);
-            while (getline(myfile, line))
-            {
-                while (!resultsArray->contains(line));
-            }
-        myfile.close();
 
-        pthread_mutex_lock(&finished);
-        finishedFiles++;
-        pthread_mutex_unlock(&finished);
 
-//return 0;
+        cout << "All domains from file \""<< (char*)filename<< "\" are processed!\n";
         pthread_exit(NULL);
     }
 
 
     static void *getJob(void *filename)
     {
-        while(true)
+        while(!(allRequestersDone==true && globalQueue->isEmpty()))
         {
 
-            pthread_mutex_lock(&finished);
-            if(finishedFiles==totalFiles)
-            {
-                cout <<finishedFiles<<" / "<<totalFiles<<endl;
-                pthread_mutex_unlock(&finished);
-                break;
-            }
-            pthread_mutex_unlock(&finished);
+                pthread_mutex_lock(&mutexConsumers);
+                pthread_mutex_lock(&consumer);
                 string host = globalQueue->pop();
+
+                pthread_mutex_unlock(&producer);
+                pthread_mutex_unlock(&mutexConsumers);
+
                 int ips_found=0;
                 string ip_all;
                 char** ip = resolveIP(host,&ips_found);
@@ -136,19 +123,25 @@ public:
                     cerr <<host<< " : IP address for domain not found"<<endl;
                     resultsArray->addTail(host, "");
                 }
-        cout << pthread_self()<<endl;
-        }
 
+        }
         pthread_exit(NULL);
     }
 
     static void* AquireRequests(void* args){
         char* argv[globalargc-2];
         char **new_chars=reinterpret_cast<char**>(args);
+
+        // copy only filenames
         for (int i=1,j=0;i<globalargc-1;i++,j++)
         {
             argv[j]= strdup(new_chars[i]);
         }
+
+        //make pthreads joinable
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
         pthread_t workingThreads[totalFiles];
 
@@ -156,7 +149,7 @@ public:
         // creating requests threads
         for(int i = 0; i < totalFiles; i++)
         {
-            rc = pthread_create(&workingThreads[i],NULL, putJob, argv[i]);
+            rc = pthread_create(&workingThreads[i],&attr, putJob, argv[i]);
             if(rc)
             {
                 cout <<"ERROR in pthread_create() :"+rc<<endl;
@@ -165,31 +158,36 @@ public:
         }
 
         void *status;
+        // waiting to finishing all requests threads
+        for(int i = 0; i < totalFiles; i++)
+        {
+            rc = pthread_join(workingThreads[i], &status);
+            if (rc)
+            {
+                cout<<"ERROR in pthread_join() : "<< rc <<endl;
+                exit(PTHREAD_JOIN_ERROR);
+            }
+        }
 
-//        for(int i = 0; i < totalFiles; i++)
-//        {
-//            rc = pthread_join(workingThreads[i], &status);
-//            if (rc)
-//            {
-//                cout<<"ERROR in pthread_join() : "<< rc <<endl;
-//                exit(PTHREAD_JOIN_ERROR);
-//            }
-//        }
-
+        cout << "All requesters threads finished\n";
+        allRequestersDone=true;//say to resolvers that there aro no more new task will bee added
         pthread_exit(NULL);
     }
 
 
     static void* ServeRequest(void* args){
-//        argvc* arg  = (argvc*)args;
 
         pthread_t workingThreads[MAX_RESOLVER_THREADS];
+
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
         int rc;
         // creating requests threads
         for(int i = 0; i < MAX_RESOLVER_THREADS; i++)
         {
-            rc = pthread_create(&workingThreads[i],NULL, getJob, &i);
+            rc = pthread_create(&workingThreads[i],&attr, getJob, &i);
             if(rc)
             {
                 cout <<"ERROR in pthread_create() :"+rc<<endl;
@@ -199,21 +197,20 @@ public:
 
         void* status;
 
-//        for(int i = 0; i < MAX_RESOLVER_THREADS; i++)
-//        {
-//            rc = pthread_join(workingThreads[i], &status);
-//            if (rc)
-//            {
-//                cout<<"ERROR in pthread_join() : "<< rc <<endl;
-//                exit(PTHREAD_JOIN_ERROR);
-//            }
-//        }
+        for(int i = 0; i < MAX_RESOLVER_THREADS; i++)
+        {
+            rc = pthread_join(workingThreads[i], &status);
+            if (rc)
+            {
+                cout<<"ERROR in pthread_join() : "<< rc <<endl;
+                exit(PTHREAD_JOIN_ERROR);
+            }
 
+        }
+        cout << "All resolvers threads finished\n";
 
         pthread_exit(NULL);
     }
-
-
 };
 
 #endif //HW5_MYTHREADPOOL_H

@@ -8,13 +8,16 @@
 #include "myQueue.h"
 #include "ResultsArray.h"
 int globalargc;
-struct argvc{
-    char* argv[10];
-    int argc;
-};
+
+
+#define MAX_IP_ADRESSES 10
+#define MAX_RESOLVER_THREADS 10
+#define MIN_RESOLVER_THREADS 2
 
 myQueue* globalQueue = new myQueue(10);
 ResultsArray* resultsArray = new ResultsArray();
 
-int finishedFiles=0,totalFiles;
+bool allRequestersDone=true;
+unsigned long **requestsDone;
+int totalFiles;
 #endif //HW5_GLOBALQUEUE_H
