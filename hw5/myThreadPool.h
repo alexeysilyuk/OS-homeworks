@@ -22,13 +22,12 @@ extern "C"
 }
 
  pthread_mutex_t producer,consumer,mutex;
- pthread_mutex_t mutexProducers,mutexConsumers;
-
+ pthread_mutex_t mutexProducers,mutexConsumers,mutexDumper;
 class myThreadPool{
 private:
 
     int threadsAmount;
-
+    pthread_t * pthreads;
 public:
 
     myThreadPool(int threads)
@@ -39,7 +38,7 @@ public:
         pthread_mutex_init(&consumer,NULL);
         pthread_mutex_init(&mutexProducers,NULL);
         pthread_mutex_init(&mutexConsumers,NULL);
-
+        pthread_mutex_init(&mutexDumper,NULL);
 
     }
     ~myThreadPool(){
@@ -47,6 +46,7 @@ public:
         pthread_mutex_destroy(&consumer);
         pthread_mutex_destroy(&mutexProducers);
         pthread_mutex_destroy(&mutexConsumers);
+        pthread_mutex_destroy(&mutexDumper);
          }
 
     static char ** resolveIP(string hostname, int* ips_found)
@@ -60,11 +60,12 @@ public:
             return ipArray;
     }
 
+
     static void *putJob(void *filename)
     {
+
         char* file = (char*)filename;
         pthread_cond_t cond=PTHREAD_COND_INITIALIZER;
-        pthread_mutex_t resultMutex;
         string line;
         ifstream myfile;
 
@@ -85,46 +86,42 @@ public:
                 }
             }
         myfile.close();
-
-
-
-        cout << "All domains from file \""<< (char*)filename<< "\" are processed!\n";
         pthread_exit(NULL);
     }
 
 
     static void *getJob(void *filename)
     {
-        while(!(allRequestersDone==true && globalQueue->isEmpty()))
+        while(allRequestersDone==false || !globalQueue->isEmpty())
         {
 
                 pthread_mutex_lock(&mutexConsumers);
                 pthread_mutex_lock(&consumer);
-                string host = globalQueue->pop();
-
+                request *result = globalQueue->pop();
+                string host = result->hostname;
                 pthread_mutex_unlock(&producer);
-                pthread_mutex_unlock(&mutexConsumers);
 
-                int ips_found=0;
+                pthread_cond_signal(result->taskDoneCond);
+                pthread_mutex_unlock(&mutexConsumers);
+                int ips_found = 0;
                 string ip_all;
-                char** ip = resolveIP(host,&ips_found);
-                if(ip!=NULL)
-                {
-                    for(int i=0;i<ips_found;i++)
-                    {
-                        ip_all+=ip[i];
-                        ip_all+=",";
+                char **ip = resolveIP(host, &ips_found);
+                if (ip != NULL) {
+                    for (int i = 0; i < ips_found; i++) {
+                        ip_all += ip[i];
+                        ip_all += ",";
                     }
-                    ip_all=ip_all.substr(0,ip_all.size()-1);
+                    ip_all = ip_all.substr(0, ip_all.size() - 1);
                     resultsArray->addTail(host, ip_all);
-                }
-                else
-                {
-                    cerr <<host<< " : IP address for domain not found"<<endl;
+                } else {
+                    cerr << host << " : IP address for domain not found" << endl;
                     resultsArray->addTail(host, "");
                 }
 
+
+
         }
+//        cout << "resolver thread done "<<pthread_self()<<endl;
         pthread_exit(NULL);
     }
 
@@ -152,7 +149,7 @@ public:
             rc = pthread_create(&workingThreads[i],&attr, putJob, argv[i]);
             if(rc)
             {
-                cout <<"ERROR in pthread_create() :"+rc<<endl;
+                cerr <<"ERROR in pthread_create() :"+rc<<endl;
                 exit(PTHREAD_CREATE_ERROR);
             }
         }
@@ -164,12 +161,12 @@ public:
             rc = pthread_join(workingThreads[i], &status);
             if (rc)
             {
-                cout<<"ERROR in pthread_join() : "<< rc <<endl;
+                cerr<<"ERROR in pthread_join() : "<< rc <<endl;
                 exit(PTHREAD_JOIN_ERROR);
             }
         }
 
-        cout << "All requesters threads finished\n";
+        cout << blueB << "Requesters threads finished"<<defB<<endl;
         allRequestersDone=true;//say to resolvers that there aro no more new task will bee added
         pthread_exit(NULL);
     }
@@ -190,7 +187,7 @@ public:
             rc = pthread_create(&workingThreads[i],&attr, getJob, &i);
             if(rc)
             {
-                cout <<"ERROR in pthread_create() :"+rc<<endl;
+                cerr <<"ERROR in pthread_create() :"+rc<<endl;
                 exit(PTHREAD_CREATE_ERROR);
             }
         }
@@ -202,14 +199,67 @@ public:
             rc = pthread_join(workingThreads[i], &status);
             if (rc)
             {
-                cout<<"ERROR in pthread_join() : "<< rc <<endl;
+                cerr<<"ERROR in pthread_join() : "<< rc <<endl;
                 exit(PTHREAD_JOIN_ERROR);
             }
 
         }
-        cout << "All resolvers threads finished\n";
+        cout << blueB << "Resolvers threads finished"<<defB<<endl;
 
         pthread_exit(NULL);
+    }
+
+
+    static void *getDumperJob(void *filename)
+    {
+            while(!resultsArray->isEmpty()) {
+                pthread_mutex_lock(&mutexDumper);
+                if(!resultsArray->isEmpty())
+                {
+                    string res = resultsArray->popFirst();
+                    if(res.compare("NULL")!=0)
+                    {
+                        resultsArray->writeToFile(res);
+                    }
+                }
+                pthread_mutex_unlock(&mutexDumper);
+        }
+//        cout << "resolver thread done "<<pthread_self()<<endl;
+        pthread_exit(NULL);
+    }
+    static void* DumpDesults(void* args){
+
+        pthread_t workingThreads[DUMPER_THREADS];
+
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+
+        int rc;
+        for(int i = 0; i < DUMPER_THREADS; i++)
+        {
+            rc = pthread_create(&workingThreads[i],&attr, getDumperJob, &i);
+            if(rc)
+            {
+                cerr <<"ERROR in pthread_create() :"+rc<<endl;
+                exit(PTHREAD_CREATE_ERROR);
+            }
+        }
+        void* status;
+        for(int i = 0; i < DUMPER_THREADS; i++)
+        {
+            rc = pthread_join(workingThreads[i], &status);
+            if (rc)
+            {
+                cerr<<"ERROR in pthread_join() : "<< rc <<endl;
+                exit(PTHREAD_JOIN_ERROR);
+            }
+
+        }
+        cout << blueB << "All dumpers threads finished"<<defB<<endl;
+
+        pthread_exit(NULL);
+
     }
 };
 

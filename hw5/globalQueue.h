@@ -13,11 +13,19 @@ int globalargc;
 #define MAX_IP_ADRESSES 10
 #define MAX_RESOLVER_THREADS 10
 #define MIN_RESOLVER_THREADS 2
+#define DUMPER_THREADS 3
+#define QUEUE_SIZE 5
 
-myQueue* globalQueue = new myQueue(10);
+myQueue* globalQueue = new myQueue(QUEUE_SIZE);
 ResultsArray* resultsArray = new ResultsArray();
 
-bool allRequestersDone=true;
+bool allRequestersDone=false;
 unsigned long **requestsDone;
 int totalFiles;
+
+
+
+
+
+
 #endif //HW5_GLOBALQUEUE_H

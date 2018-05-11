@@ -10,16 +10,16 @@
 #include "RWLock.h"
 
 using namespace std;
-
+struct request {
+    string hostname;
+    pthread_mutex_t* threadMutex;
+    pthread_cond_t* taskDoneCond;
+};
 pthread_cond_t requestersCondVar;
 
 class myQueue
 {
-    struct request {
-        string hostname;
-        pthread_mutex_t* threadMutex;
-        pthread_cond_t* taskDoneCond;
-    };
+
 
 private:
         int size;
@@ -47,11 +47,11 @@ public:
         bool push(string _hostname,pthread_cond_t *cond, pthread_mutex_t *mutex)
         {
             bool b = 0;
-//            rwLock.WriteLock();
+            rwLock.WriteLock();
             pthread_mutex_lock(&producer);
-            if(isFull()){
-                pthread_cond_wait(&requester,&producer);
-            }
+//            if(isFull()){
+//                pthread_cond_wait(&requester,&producer);
+//            }
 
             if(isEmpty()){
                 tail = head = 0;
@@ -66,16 +66,17 @@ public:
             file.taskDoneCond=cond;
             file.threadMutex=mutex;
             requests[tail] = file;
+
             pthread_cond_signal(&resolver);
             pthread_mutex_unlock(&producer);
 //            rwLock.WriteUnlock();
             return b;
         }
 
-        string pop()
+        request* pop()
         {
-            pthread_cond_t * cond;
-//            rwLock.ReadLock();
+            request *result = new request();
+
             pthread_mutex_lock(&consumer);
             string val;
             if(isEmpty())
@@ -84,25 +85,22 @@ public:
             }
 
             if(head == tail){
-                val = requests[head].hostname;
-                cond=requests[head].taskDoneCond;
+                result->hostname = requests[head].hostname;
+                result->taskDoneCond=requests[head].taskDoneCond;
                 head = -1;
                 tail  = -1;
             }
             else
             {
-                val = requests[head].hostname;
-                cond=requests[head].taskDoneCond;
+                result->hostname = requests[head].hostname;
+                result->taskDoneCond=requests[head].taskDoneCond;
                 head = ( head + 1 ) % size;
             }
-            if(cond!=NULL)
-                pthread_cond_signal(cond);
 
             pthread_cond_signal(&requester);
             pthread_mutex_unlock(&consumer);
-//            rwLock.ReadUnlock();
 
-            return val;
+            return result;
         }
     bool isEmpty(){  return (tail == -1 && head == -1   ) ? true : false;  }
     bool isFull(){   return ((tail + 1) %  size == head ) ? true : false;   }
