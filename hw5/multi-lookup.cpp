@@ -2,16 +2,11 @@
 #include <pthread.h>
 #include "multi-lookup.h"
 #include "myQueue.h"
-
-
 #include "myThreadPool.h"
-
 #include "globalQueue.h"
-
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
-
 #include <unistd.h>
 #include <random>
 #include <iostream>
@@ -155,7 +150,6 @@ int main(int argc, char* argv[]) {
 
 
         endbanner();
-//        resultsArray->print();
         pthread_exit(NULL); //dont finish main thread before other threads
     }
 

@@ -7,7 +7,7 @@
 #include<iostream>
 #include<cstdlib>
 #include <string>
-#include "RWLock.h"
+#define  DEFAULT_QUEUE_SIZE 10
 
 using namespace std;
 struct request {
@@ -26,12 +26,12 @@ private:
         request* requests;
         int head;
         int tail;
-        RWLock rwLock;
         pthread_cond_t requester,resolver;
         pthread_mutex_t producer,consumer;
 
 public:
-        myQueue(int x=10):size(x),requests(new request[size]),head(-1),tail(-1){
+        // default queue size is 10
+        myQueue(int x=DEFAULT_QUEUE_SIZE):size(x),requests(new request[size]),head(-1),tail(-1){
             pthread_cond_init (&requester, NULL);
             pthread_cond_init (&resolver, NULL);
             pthread_mutex_init(&producer,NULL);
@@ -44,14 +44,14 @@ public:
         pthread_mutex_destroy(&producer);
         pthread_mutex_destroy(&consumer);
     }
+    // pushing to thread safe array
         bool push(string _hostname,pthread_cond_t *cond, pthread_mutex_t *mutex)
         {
             bool b = 0;
-            rwLock.WriteLock();
             pthread_mutex_lock(&producer);
-//            if(isFull()){
-//                pthread_cond_wait(&requester,&producer);
-//            }
+            if(isFull()){
+                pthread_cond_wait(&requester,&producer);
+            }
 
             if(isEmpty()){
                 tail = head = 0;
@@ -65,20 +65,25 @@ public:
             file.hostname=_hostname;
             file.taskDoneCond=cond;
             file.threadMutex=mutex;
+
             requests[tail] = file;
 
             pthread_cond_signal(&resolver);
             pthread_mutex_unlock(&producer);
-//            rwLock.WriteUnlock();
+
             return b;
         }
 
+
+        // thread safe pop
         request* pop()
         {
+            pthread_mutex_lock(&consumer);
             request *result = new request();
 
-            pthread_mutex_lock(&consumer);
+
             string val;
+            // if queue is empty, go to slip till receive signal
             if(isEmpty())
             {
                 pthread_cond_wait(&resolver,&consumer);
@@ -96,14 +101,16 @@ public:
                 result->taskDoneCond=requests[head].taskDoneCond;
                 head = ( head + 1 ) % size;
             }
-
+            // signal requesters to wake up and to add new task
             pthread_cond_signal(&requester);
             pthread_mutex_unlock(&consumer);
 
             return result;
         }
-    bool isEmpty(){  return (tail == -1 && head == -1   ) ? true : false;  }
-    bool isFull(){   return ((tail + 1) %  size == head ) ? true : false;   }
+
+    // basic functions
+    bool isEmpty(){  return tail == -1 && head == -1    ? true : false;  }
+    bool isFull(){   return (tail + 1) %  size == head  ? true : false;   }
 
 
 

@@ -23,11 +23,14 @@ extern "C"
 
  pthread_mutex_t producer,consumer,mutex;
  pthread_mutex_t mutexProducers,mutexConsumers,mutexDumper;
+
+
 class myThreadPool{
 private:
 
     int threadsAmount;
     pthread_t * pthreads;
+
 public:
 
     myThreadPool(int threads)
@@ -49,6 +52,7 @@ public:
         pthread_mutex_destroy(&mutexDumper);
          }
 
+    // resolve ip for given domain name and return results
     static char ** resolveIP(string hostname, int* ips_found)
     {
         char **ipArray = new char*[MAX_IP_ADRESSES];
@@ -60,7 +64,7 @@ public:
             return ipArray;
     }
 
-
+    //
     static void *putJob(void *filename)
     {
 
@@ -69,14 +73,19 @@ public:
         string line;
         ifstream myfile;
 
+        // each requester thread:
+        //  1. open file for reading
+        //  2. read line by line to get hostname
+        //  3. try to push domain name to tasks queue
+        //  4. wake consumer and wait till resolver thread will wake him up after processing
         myfile.open(file);
-
         while (getline(myfile, line))
         {
             if(!resultsArray->contains(line)) {
 
                 pthread_mutex_lock(&mutexProducers);
                 pthread_mutex_lock(&producer);
+
                 globalQueue->push(line,&cond,&mutexProducers);
 
                 pthread_mutex_unlock(&consumer);
@@ -89,47 +98,54 @@ public:
         pthread_exit(NULL);
     }
 
-
+    // function for resolvers to get job from queue of tasks and process it
     static void *getJob(void *filename)
     {
-        while(allRequestersDone==false || !globalQueue->isEmpty())
+        // run till all requesters finished to process all hosts  and queue is empty
+        while(!allRequestersDone || !globalQueue->isEmpty())
         {
-
                 pthread_mutex_lock(&mutexConsumers);
                 pthread_mutex_lock(&consumer);
+
+                // take hostname from queue
                 request *result = globalQueue->pop();
                 string host = result->hostname;
-                pthread_mutex_unlock(&producer);
 
-                pthread_cond_signal(result->taskDoneCond);
+                pthread_mutex_unlock(&producer);    // unlock other requesters to add tasks
+
+                pthread_cond_signal(result->taskDoneCond);  // signal to requester that added this hostname about finishing process
                 pthread_mutex_unlock(&mutexConsumers);
+
+
                 int ips_found = 0;
                 string ip_all;
-                char **ip = resolveIP(host, &ips_found);
-                if (ip != NULL) {
+                char **ip = resolveIP(host, &ips_found);    // get all ip adresses for given hostname
+                if (ip != NULL)
+                {
                     for (int i = 0; i < ips_found; i++) {
                         ip_all += ip[i];
                         ip_all += ",";
                     }
                     ip_all = ip_all.substr(0, ip_all.size() - 1);
                     resultsArray->addTail(host, ip_all);
-                } else {
+                }
+                else
+                {
                     cerr << host << " : IP address for domain not found" << endl;
                     resultsArray->addTail(host, "");
                 }
-
-
-
         }
-//        cout << "resolver thread done "<<pthread_self()<<endl;
+
         pthread_exit(NULL);
     }
 
+    // create requesters threads to process files
     static void* AquireRequests(void* args){
+
         char* argv[globalargc-2];
         char **new_chars=reinterpret_cast<char**>(args);
 
-        // copy only filenames
+        // copy only filenames from argv to new array
         for (int i=1,j=0;i<globalargc-1;i++,j++)
         {
             argv[j]= strdup(new_chars[i]);
@@ -140,6 +156,7 @@ public:
         pthread_attr_init(&attr);
         pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
+        // create threads, one for each file
         pthread_t workingThreads[totalFiles];
 
         int rc;
@@ -167,11 +184,11 @@ public:
         }
 
         cout << blueB << "Requesters threads finished"<<defB<<endl;
-        allRequestersDone=true;//say to resolvers that there aro no more new task will bee added
+        allRequestersDone=true;//say to resolvers that there aro no more new task will be added
         pthread_exit(NULL);
     }
 
-
+    // create resolvers threads
     static void* ServeRequest(void* args){
 
         pthread_t workingThreads[MAX_RESOLVER_THREADS];
@@ -209,13 +226,16 @@ public:
         pthread_exit(NULL);
     }
 
-
-    static void *getDumperJob(void *filename)
+    // get jobs from result array to print to file
+    static void *getDumperJob(void * _)
     {
+        // run till results array is empty
             while(!resultsArray->isEmpty()) {
                 pthread_mutex_lock(&mutexDumper);
+                // double check to prevent double pop
                 if(!resultsArray->isEmpty())
                 {
+                    // get line from results array and print in to file
                     string res = resultsArray->popFirst();
                     if(res.compare("NULL")!=0)
                     {
@@ -224,9 +244,10 @@ public:
                 }
                 pthread_mutex_unlock(&mutexDumper);
         }
-//        cout << "resolver thread done "<<pthread_self()<<endl;
         pthread_exit(NULL);
     }
+
+    //create dumpers threads
     static void* DumpDesults(void* args){
 
         pthread_t workingThreads[DUMPER_THREADS];

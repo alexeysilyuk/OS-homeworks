@@ -5,6 +5,7 @@
 #ifndef HW5_RESULTSARRAY_H
 #define HW5_RESULTSARRAY_H
 
+//  defining colors for ptinting
 #include "colormod.h"
 Color::Modifier redC(Color::BG_RED);
 Color::Modifier redF(Color::FG_RED);
@@ -14,6 +15,8 @@ Color::Modifier greF(Color::FG_GREEN);
 Color::Modifier greB(Color::BG_GREEN);
 Color::Modifier blueB(Color::BG_BLUE);
 Color::Modifier blueF(Color::FG_BLUE);
+
+
 #include <string>
 #include <fstream>
 #include <string>
@@ -115,7 +118,7 @@ public:
 
     }
 
-    // checks if given hostname already been processe before and added to result list
+    // checking if given hostname already been processe before and added to result list
     bool contains(string hostname)
     {
         pthread_mutex_lock(&contLock);
@@ -124,7 +127,7 @@ public:
 
         while(temp!=NULL)
         {
-            // if found this hostname in results, returns true otherwise after anding return false
+            // if found this hostname in results, returns true otherwise after ending return false
             if (hostname.compare(temp->hostname) == 0) {
                 pthread_mutex_unlock(&contLock);
                 return true;
@@ -135,11 +138,12 @@ public:
         return false;
     }
 
-
+    // check fi there are results in array to take
     bool isEmpty(){
         return (head==NULL)? true:false;
     }
 
+    // remove first element from linked list and returns it to dumper thread for printing to file
     string popFirst(){
 
         pthread_mutex_lock(&contLock);
@@ -156,16 +160,17 @@ public:
 
     }
 
-    void print(){
-        resultNode *temp;
-        temp=head;
-
-        while(temp!=NULL)
-        {
-            cout << temp->ip<<endl;
-            temp=temp->next;
-        }
-    }
+////     print whole array
+//    void print(){
+//        resultNode *temp;
+//        temp=head;
+//
+//        while(temp!=NULL)
+//        {
+//            cout << temp->ip<<endl;
+//            temp=temp->next;
+//        }
+//    }
 };
 
 
