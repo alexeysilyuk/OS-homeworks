@@ -4,7 +4,7 @@
 
 
 // this is extra class to colorify cerr and cout prints, therefore no comments, it's taken from internet
-/
+
 #ifndef HW5_COLORMOD_H
 #define HW5_COLORMOD_H
 #include <ostream>
