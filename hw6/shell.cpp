@@ -1,11 +1,23 @@
 #include "shell.h"
-
+#include <list>
 
 using namespace std;
 #define ARGSSIZE 1024
 int lastExitStatus=0;
 
 list< std::string > tokens;
+struct pipeElement{
+    int index;
+    char direction;
+    int pipe_identifier;
+    string source,destination;
+};
+
+char **commands;
+int commandIndex=0;
+
+char buffer[ARGSSIZE+1];
+
 string homedir;
 string currentDir;
 
@@ -85,15 +97,74 @@ void cleanBuffer(){
     cin.ignore(cin.rdbuf()->in_avail());	// ask buffer for length of chars in it and clear all of them
 }
 
+//checking if there pipes in command, and push to list all pipes indexes with types
+bool isPiped(){
+    bool pipeFound=false;
+    for (list<string>::const_iterator it = tokens.begin(), end = tokens.end(); it != end; ++it){
+
+        std::size_t foundLeft = it->find("<");
+        std::size_t foundRight = it->find(">");
+
+        if (foundLeft!=std::string::npos)
+        {
+            pipeFound=true;
+//            temp_pipe = new pipeElement();
+//            temp_pipe->direction='l';
+//            temp_pipe->index=i;
+//            temp_pipe->pipe_identifier=atoi(it->substr(0,1).c_str());
+//            pipes.push_back(*temp_pipe);
+        }
+        if (foundRight!=std::string::npos)
+        {
+            pipeFound= true;
+//            temp_pipe = new pipeElement();
+//            temp_pipe->direction='r';
+//            temp_pipe->index=i;
+//            temp_pipe->pipe_identifier=atoi(it->substr(0,1).c_str());
+//            cout << temp_pipe->pipe_identifier<<endl;
+//            pipes.push_back(*temp_pipe);
+        }
+    }
+
+        return pipeFound;
+
+}
+
 
 //eval finction
 void evaluate(){
 
     string path="";
 
+//    bool piped = isPiped();
+    int pipefd[2];
+    bool piped=false;
     // loop iterates over tokens list
     for (list<string>::const_iterator it = tokens.begin(), end = tokens.end(); it != end; ++it)
     {
+
+        // determine if it's PIPE
+        std::size_t foundLeft = it->find("<");
+        std::size_t foundRight = it->find(">");
+        pipeElement *temp_pipe;
+
+        if (foundLeft!=std::string::npos)
+        {
+            temp_pipe = new pipeElement();
+            temp_pipe->direction='l';
+            temp_pipe->pipe_identifier=atoi(it->substr(0,1).c_str());
+            piped=true;
+        }
+        if (foundRight!=std::string::npos)
+        {
+            temp_pipe = new pipeElement();
+            temp_pipe->direction='r';
+            temp_pipe->pipe_identifier=atoi(it->substr(0,1).c_str());
+            piped=true;
+        }
+
+
+
         // if choosen CD command by user
         if(it->compare("cd")==0)
         {
@@ -168,20 +239,48 @@ void evaluate(){
             char *args[toksNumber+1];
 
             index=0;
-
+            int subindex=0;
+            pid_t  pidT;
             // because we need to send array of args to execv, need to copy
             // tokens from LIST type to char[]
             for (list<string>::const_iterator iter = it; iter != tokens.end(); ++iter) {
+
+                std::size_t foundl = iter->find("<");
+                std::size_t foundr = iter->find(">");
+
                 if(*iter == "&" && index==toksNumber)
                     deamonProc=1;
                 else
                 {
+                    if (foundl!=std::string::npos || foundr!=std::string::npos) {
+//                        commands[commandIndex]=*args;
+                        iter++;
+                        pidT=fork();
+                        int status;
+                        if(pidT==0)
+                        {
+                            break;
+                        }
+                        else
+                        {
+//                            while(wait(&pidT)>0);
+                            index=0;
+                            cout << "father after fork"<<endl;
+                        }
+
+
+                    }
+
+
                     array[index] = iter->c_str();
                     args[index] = new char[ARGSSIZE];
 
                     // copy token after parsing it, if needed
-                    strcpy(args[index],parseVar(array[index]).c_str());
+                    strcpy(args[index], parseVar(array[index]).c_str());
+//                    cout << args[index] << endl;
                     index++;
+
+
                 }
 
             }
@@ -199,15 +298,22 @@ void evaluate(){
                 // for child process, run function execvp and send args list
                 // in case of failure, print error and exit with status 127
                 case 0:
+
                     if (execvp(args[0],args) == -1) {
                         cout << strerror(errno)<<endl;
                         cout << args[0] << " command not found" << endl;
                         exit(127);
                     }
                     break;
+
                 // for parent process
                 default:
-                    //if choosen DEAMON process, print child process pid after fork
+                    if(piped){
+                        close(pipefd[0]);
+                        close(pipefd[1]);
+
+                    }
+
                     if (deamonProc) {
                         cout << "[" << pid << "]\n";
                         lastExitStatus = 0;
@@ -215,7 +321,8 @@ void evaluate(){
                     // if not DEAMON, run WAITPID and wait for child process
                     // and update his exit status
                     else {
-                        if (waitpid(pid, &status, 0) == -1) {
+                        if (waitpid(pid, &status, 0) == -1)
+                        {
                             lastExitStatus = 1;
                             exit(1);
                         }
