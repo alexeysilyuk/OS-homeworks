@@ -1,4 +1,5 @@
 #include "shell.h"
+#include <fcntl.h>
 #include <list>
 
 using namespace std;
@@ -24,15 +25,25 @@ string currentDir;
 int main(void) {
     cout << "Welcome to \"@Shell\" " <<endl;
     // infinite REPL
-
+    char procType='i';
     while(true){
 
         tokens.clear(); // remove old tokens
         cout << endl;
-        cout << "@Shell: "<<getDir()<< "> ";
+        switch(procType){
+//            case 'p':
+//                cout << "@Shell: "<<getDir()<< "> ";
+//                break;
+            case 'c':
+                break;  // child process runninng, don't print command prompt
+            default:
+                cout << "@Shell: "<<getDir()<< "> "; // main process running, print command prompt line
+        }
 
         read();
-        evaluate();
+        procType = evaluate();
+
+
     }
     return 1;
 }
@@ -53,8 +64,6 @@ void read(){
 
     // run tokenization function
     tokenize(line);
-
-
 
 }
 
@@ -132,17 +141,17 @@ bool isPiped(){
 
 
 //eval finction
-void evaluate(){
+char evaluate(){
 
     string path="";
 
 //    bool piped = isPiped();
     int pipefd[2];
     bool piped=false;
+    char type;
     // loop iterates over tokens list
     for (list<string>::const_iterator it = tokens.begin(), end = tokens.end(); it != end; ++it)
     {
-
         // determine if it's PIPE
         std::size_t foundLeft = it->find("<");
         std::size_t foundRight = it->find(">");
@@ -150,6 +159,7 @@ void evaluate(){
 
         if (foundLeft!=std::string::npos)
         {
+            cout << "found <\n";
             temp_pipe = new pipeElement();
             temp_pipe->direction='l';
             temp_pipe->pipe_identifier=atoi(it->substr(0,1).c_str());
@@ -157,13 +167,14 @@ void evaluate(){
         }
         if (foundRight!=std::string::npos)
         {
+            cout << "found >\n";
             temp_pipe = new pipeElement();
             temp_pipe->direction='r';
             temp_pipe->pipe_identifier=atoi(it->substr(0,1).c_str());
             piped=true;
         }
 
-
+        type='o';
 
         // if choosen CD command by user
         if(it->compare("cd")==0)
@@ -199,7 +210,7 @@ void evaluate(){
                     perror("@Shell: cd");
                     lastExitStatus=1;
                 }
-                return;
+                return type;
             }
             else
             {
@@ -212,7 +223,7 @@ void evaluate(){
         else if (it->compare("$?")==0)
         {
             cout << lastExitStatus<<endl;
-            return;
+            return type;
         }
         // choosen some other BASH command to execute
         else
@@ -220,6 +231,7 @@ void evaluate(){
             int status; // for process status
 
             unsigned index = 0;
+//            int status=0;
             unsigned toksNumber=0;
             int deamonProc=0;
 
@@ -252,24 +264,58 @@ void evaluate(){
                     deamonProc=1;
                 else
                 {
-                    if (foundl!=std::string::npos || foundr!=std::string::npos) {
-//                        commands[commandIndex]=*args;
+                    if (foundl!=std::string::npos) {
+                        piped=true;
+                        temp_pipe = new pipeElement();
+                        temp_pipe->direction='l';
+                        temp_pipe->pipe_identifier=atoi(it->substr(0,1).c_str());
                         iter++;
                         pidT=fork();
-                        int status;
-                        if(pidT==0)
+
+                        if(pidT==-1)
                         {
+                            perror("fork()");
+                            exit(EXIT_FAILURE);
+                        }
+                        else if(pidT==0)
+                        {
+                            type='c';
                             break;
                         }
                         else
                         {
-//                            while(wait(&pidT)>0);
+                            usleep(10000);
                             index=0;
-                            cout << "father after fork"<<endl;
+                            type='p';
                         }
-
-
                     }
+                    if (foundr!=std::string::npos) {
+                        piped=true;
+                        temp_pipe = new pipeElement();
+                        temp_pipe->direction='r';
+                        temp_pipe->pipe_identifier=atoi(it->substr(0,1).c_str());
+
+                        iter++;
+                        pidT=fork();
+
+                        if(pidT==-1)
+                        {
+                            perror("fork()");
+                            exit(EXIT_FAILURE);
+                        }
+                        else if(pidT==0)
+                        {
+                            type='c';
+                            break;
+                        }
+                        else
+                        {
+                            usleep(10000);
+                            index=0;
+                            type='p';
+                        }
+                    }
+
 
 
                     array[index] = iter->c_str();
@@ -298,6 +344,12 @@ void evaluate(){
                 // for child process, run function execvp and send args list
                 // in case of failure, print error and exit with status 127
                 case 0:
+                    if(piped){
+                        cout << "child piped\n";
+                        cout << temp_pipe->direction <<endl;
+//                        close(pipefd[0]);
+//                        close(pipefd[1]);
+                    }
 
                     if (execvp(args[0],args) == -1) {
                         cout << strerror(errno)<<endl;
@@ -308,12 +360,13 @@ void evaluate(){
 
                 // for parent process
                 default:
-                    if(piped){
-                        close(pipefd[0]);
-                        close(pipefd[1]);
-
-                    }
-
+//                    if(piped){
+//                        cout << "parent piped\n";
+//                        cout << temp_pipe->direction <<endl;
+////                        close(pipefd[0]);
+////                        close(pipefd[1]);
+//                    }
+//                    while(wait(&status)>0);
                     if (deamonProc) {
                         cout << "[" << pid << "]\n";
                         lastExitStatus = 0;
@@ -372,10 +425,11 @@ void evaluate(){
                     }
             }
 
-            return;
+            return type;
 
             }
     }
+    return 'e';
 }
 
 // parse received var
@@ -456,3 +510,25 @@ bool isCapitalLetter(char ch){
 }
 
 
+void openFile(string fileName,int redirectionNumber,int *filedesc){
+    switch(redirectionNumber){
+        case 0:
+            *filedesc =open(fileName.c_str(),O_RDONLY,S_IRWXO | S_IRWXG | S_IRWXU);
+            if(*filedesc == -1)
+                perror("open(READ):");
+            break;
+
+        case 1:
+            *filedesc = open(fileName.c_str(),O_WRONLY| O_CREAT |O_TRUNC , S_IRWXO | S_IRWXG | S_IRWXU);
+            if(*filedesc == -1)
+                perror("open(WRITE):");
+            break;
+
+        case 2:
+            *filedesc = open(fileName.c_str(),O_WRONLY| O_CREAT |O_TRUNC , S_IRWXO | S_IRWXG | S_IRWXU);
+            if(*filedesc == -1)
+                perror("open(ERROR):");
+            break;
+    }
+
+}

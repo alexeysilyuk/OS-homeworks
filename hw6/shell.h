@@ -14,15 +14,21 @@
 #include <cstring>
 using namespace std;
 
+#define STDIN  0
+#define STDOUT 1
+#define STDERR 2
+
+
 void read();
 void cleanBuffer();
 string getDir();
 list <string> tokenize(string line);
-void evaluate();
+char evaluate();
 string parseVar(string it);
 bool isVariable(string str);
 bool isAlphaNumeric(char ch);
 bool isCapitalLetter(char ch);
+void openFile(string fileName,int redirectionNumber,int *filedesc);
 
 
 #endif //HW2_MAIN_H
