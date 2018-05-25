@@ -1,5 +1,6 @@
 #include "shell.h"
 #include <fcntl.h>
+#include <string>
 #include <list>
 
 using namespace std;
@@ -251,7 +252,9 @@ char evaluate(){
             char *args[toksNumber+1];
 
             index=0;
-            int subindex=0;
+            int subindex=0,status2;
+            temp_pipe = new pipeElement();
+            string filename,prevToken="";
             pid_t  pidT;
             // because we need to send array of args to execv, need to copy
             // tokens from LIST type to char[]
@@ -265,11 +268,7 @@ char evaluate(){
                 else
                 {
                     if (foundl!=std::string::npos) {
-                        piped=true;
-                        temp_pipe = new pipeElement();
-                        temp_pipe->direction='l';
-                        temp_pipe->pipe_identifier=atoi(it->substr(0,1).c_str());
-                        iter++;
+
                         pidT=fork();
 
                         if(pidT==-1)
@@ -277,25 +276,44 @@ char evaluate(){
                             perror("fork()");
                             exit(EXIT_FAILURE);
                         }
-                        else if(pidT==0)
-                        {
-                            type='c';
-                            break;
+                        else if(pidT==0) {
+                            temp_pipe = new pipeElement();
+                            piped = true;
+                            type = 'p';
+                            temp_pipe->direction = 'l';
+                            // determine redirecton number, if not specified, set 1
+                            string str = *iter;
+                            char charNum = iter->at(0);
+                            if (charNum == '<')
+                                temp_pipe->pipe_identifier = 1;
+                            else
+                                temp_pipe->pipe_identifier = charNum - '0';
+
+                            filename = prevToken;
+                            cout << filename << endl;
+                            openFile(filename, temp_pipe->pipe_identifier, &pipefd[0]);
+                            close(temp_pipe->pipe_identifier);
+                            dup2(pipefd[0], temp_pipe->pipe_identifier );
+                            close(pipefd[0]);
+                            iter++;
+                            index = 0;
                         }
                         else
                         {
-                            usleep(10000);
                             index=0;
                             type='p';
+                            prevToken=*iter;
+                            iter++;
+                            prevToken=*iter;
+                            if (++iter==tokens.end())
+                                break;
+                            break;
                         }
                     }
+                    // '>' found as token
                     if (foundr!=std::string::npos) {
-                        piped=true;
                         temp_pipe = new pipeElement();
-                        temp_pipe->direction='r';
-                        temp_pipe->pipe_identifier=atoi(it->substr(0,1).c_str());
-
-                        iter++;
+                        piped=true;
                         pidT=fork();
 
                         if(pidT==-1)
@@ -303,20 +321,38 @@ char evaluate(){
                             perror("fork()");
                             exit(EXIT_FAILURE);
                         }
-                        else if(pidT==0)
-                        {
+                        else if(pidT==0) {
                             type='c';
+                            temp_pipe->direction='r';
+
+                            // determine redirecton number, if not specified, set 1
+                            string str = *iter;
+                            char charNum = iter->at(0);
+                            if(charNum=='>')
+                                temp_pipe->pipe_identifier=1;
+                            else
+                                temp_pipe->pipe_identifier=charNum - '0';
+
+                            iter++;
+                            filename = *iter;
+                            openFile(filename, temp_pipe->pipe_identifier, &pipefd[1]);
+                            close(temp_pipe->pipe_identifier);
+                            dup2(pipefd[1], temp_pipe->pipe_identifier );
+                            close(pipefd[1]);
+
                             break;
                         }
                         else
                         {
-                            usleep(10000);
                             index=0;
                             type='p';
+                            prevToken=*iter;
+                            iter++;
+                            prevToken=*iter;
+                            if (++iter==tokens.end())
+                                break;
                         }
                     }
-
-
 
                     array[index] = iter->c_str();
                     args[index] = new char[ARGSSIZE];
@@ -328,13 +364,16 @@ char evaluate(){
 
 
                 }
-
+            prevToken=*iter;
             }
             // put NULL to end of args list
             args[index]=NULL;
 
             pid_t zombiePid,pid;
             int WEXITSTATUS_status;
+            int pipefd[2];
+            char buf;
+
 
             // fork processes
             switch(pid=fork()) {
@@ -344,29 +383,47 @@ char evaluate(){
                 // for child process, run function execvp and send args list
                 // in case of failure, print error and exit with status 127
                 case 0:
-                    if(piped){
-                        cout << "child piped\n";
-                        cout << temp_pipe->direction <<endl;
-//                        close(pipefd[0]);
-//                        close(pipefd[1]);
-                    }
+                        if (piped && temp_pipe->direction=='>'&&type=='c') {
+                            if (execvp(args[0], args) == -1) {
+                                cout << strerror(errno) << endl;
+                                cout << args[0] << " command not found" << endl;
+                                exit(127);
+                            }
+//                            close(pipefd[0]);
+//                            if(fcntl(pipefd[0], F_GETFD)==0)
+//                            {
+//                                dup2(temp_pipe->pipe_identifier,pipefd[0]);
+//    //                            close(pipefd[0]);
+//                            }
+                        }
+                        else if(piped && temp_pipe->direction=='<' && type=='c'){
+//                            //                        if(fcntl(pipefd[0], F_GETFD)==0)
+////                        {
+////                            dup2(temp_pipe->pipe_identifier,pipefd[0]);
+//////                            close(pipefd[0]);
+////                        }
+//                            close(pipefd[0]);
+                        }
+                        else {
+                            if (execvp(args[0], args) == -1) {
+                                cout << strerror(errno) << endl;
+                                cout << args[0] << " command not found" << endl;
+                                exit(127);
+                            }
 
-                    if (execvp(args[0],args) == -1) {
-                        cout << strerror(errno)<<endl;
-                        cout << args[0] << " command not found" << endl;
-                        exit(127);
-                    }
+                        }
                     break;
 
                 // for parent process
                 default:
-//                    if(piped){
-//                        cout << "parent piped\n";
-//                        cout << temp_pipe->direction <<endl;
-////                        close(pipefd[0]);
-////                        close(pipefd[1]);
-//                    }
-//                    while(wait(&status)>0);
+                    if(piped){
+
+//                        if(fcntl(pipefd[0], F_GETFD)==0)
+//                        {
+//                            dup2(temp_pipe->pipe_identifier,pipefd[0]);
+////                            close(pipefd[0]);
+//                        }
+                    }
                     if (deamonProc) {
                         cout << "[" << pid << "]\n";
                         lastExitStatus = 0;
@@ -532,3 +589,4 @@ void openFile(string fileName,int redirectionNumber,int *filedesc){
     }
 
 }
+

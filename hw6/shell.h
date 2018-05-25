@@ -14,10 +14,6 @@
 #include <cstring>
 using namespace std;
 
-#define STDIN  0
-#define STDOUT 1
-#define STDERR 2
-
 
 void read();
 void cleanBuffer();
