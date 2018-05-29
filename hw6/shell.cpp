@@ -5,7 +5,11 @@
 
 using namespace std;
 #define ARGSSIZE 1024
+#define STDIN 0
+#define STDOUT 1
+#define STDERR 2
 int lastExitStatus=0;
+int defaultFDs[]={STDIN,STDOUT,STDERR};
 
 list< std::string > tokens;
 struct pipeElement{
@@ -25,24 +29,16 @@ string currentDir;
 
 int main(void) {
     cout << "Welcome to \"@Shell\" " <<endl;
+    cout <<endl;
     // infinite REPL
-    char procType='i';
     while(true){
 
         tokens.clear(); // remove old tokens
-        cout << endl;
-        switch(procType){
-//            case 'p':
-//                cout << "@Shell: "<<getDir()<< "> ";
-//                break;
-            case 'c':
-                break;  // child process runninng, don't print command prompt
-            default:
-                cout << "@Shell: "<<getDir()<< "> "; // main process running, print command prompt line
-        }
+
+        cout << "@Shell: "<<getDir()<< "> "; // main process running, print command prompt line
 
         read();
-        procType = evaluate();
+        evaluate();
 
 
     }
@@ -107,74 +103,18 @@ void cleanBuffer(){
     cin.ignore(cin.rdbuf()->in_avail());	// ask buffer for length of chars in it and clear all of them
 }
 
-//checking if there pipes in command, and push to list all pipes indexes with types
-bool isPiped(){
-    bool pipeFound=false;
-    for (list<string>::const_iterator it = tokens.begin(), end = tokens.end(); it != end; ++it){
-
-        std::size_t foundLeft = it->find("<");
-        std::size_t foundRight = it->find(">");
-
-        if (foundLeft!=std::string::npos)
-        {
-            pipeFound=true;
-//            temp_pipe = new pipeElement();
-//            temp_pipe->direction='l';
-//            temp_pipe->index=i;
-//            temp_pipe->pipe_identifier=atoi(it->substr(0,1).c_str());
-//            pipes.push_back(*temp_pipe);
-        }
-        if (foundRight!=std::string::npos)
-        {
-            pipeFound= true;
-//            temp_pipe = new pipeElement();
-//            temp_pipe->direction='r';
-//            temp_pipe->index=i;
-//            temp_pipe->pipe_identifier=atoi(it->substr(0,1).c_str());
-//            cout << temp_pipe->pipe_identifier<<endl;
-//            pipes.push_back(*temp_pipe);
-        }
-    }
-
-        return pipeFound;
-
-}
-
 
 //eval finction
 char evaluate(){
 
-    string path="";
+        char type;
+        string path="";
+    bool isPiped = false;
 
-//    bool piped = isPiped();
-    int pipefd[2];
-    bool piped=false;
-    char type;
+
     // loop iterates over tokens list
     for (list<string>::const_iterator it = tokens.begin(), end = tokens.end(); it != end; ++it)
     {
-        // determine if it's PIPE
-        std::size_t foundLeft = it->find("<");
-        std::size_t foundRight = it->find(">");
-        pipeElement *temp_pipe;
-
-        if (foundLeft!=std::string::npos)
-        {
-            cout << "found <\n";
-            temp_pipe = new pipeElement();
-            temp_pipe->direction='l';
-            temp_pipe->pipe_identifier=atoi(it->substr(0,1).c_str());
-            piped=true;
-        }
-        if (foundRight!=std::string::npos)
-        {
-            cout << "found >\n";
-            temp_pipe = new pipeElement();
-            temp_pipe->direction='r';
-            temp_pipe->pipe_identifier=atoi(it->substr(0,1).c_str());
-            piped=true;
-        }
-
         type='o';
 
         // if choosen CD command by user
@@ -237,7 +177,7 @@ char evaluate(){
             int deamonProc=0;
 
             // iterate over list of tokens, check if DEAMON proccess needed
-            // count real arguments amount for pending to execv
+            // count real arguments amount for pending to execvp
             for (list<string>::const_iterator iter = it; iter != tokens.end(); ++iter)
                 {
                     if(*iter == "&" && index+1==tokens.size())
@@ -252,127 +192,89 @@ char evaluate(){
             char *args[toksNumber+1];
 
             index=0;
-            int subindex=0,status2;
+            bool isRedirected=false;
+            pipeElement* temp_pipe;
             temp_pipe = new pipeElement();
             string filename,prevToken="";
-            pid_t  pidT;
             // because we need to send array of args to execv, need to copy
             // tokens from LIST type to char[]
             for (list<string>::const_iterator iter = it; iter != tokens.end(); ++iter) {
 
-                std::size_t foundl = iter->find("<");
-                std::size_t foundr = iter->find(">");
+                std::size_t foundLeftRedirection= iter->find("<");
+                std::size_t foundRightRedirection = iter->find(">");
+                std::size_t pipeFound = iter->find("|");
 
                 if(*iter == "&" && index==toksNumber)
                     deamonProc=1;
-                else
-                {
-                    if (foundl!=std::string::npos) {
 
-                        pidT=fork();
+                if (foundLeftRedirection!=std::string::npos) {
+                    temp_pipe = new pipeElement();
+                    type = 'c';
+                    temp_pipe->direction = 'l';
 
-                        if(pidT==-1)
-                        {
-                            perror("fork()");
-                            exit(EXIT_FAILURE);
-                        }
-                        else if(pidT==0) {
-                            temp_pipe = new pipeElement();
-                            piped = true;
-                            type = 'p';
-                            temp_pipe->direction = 'l';
-                            // determine redirecton number, if not specified, set 1
-                            string str = *iter;
-                            char charNum = iter->at(0);
-                            if (charNum == '<')
-                                temp_pipe->pipe_identifier = 1;
-                            else
-                                temp_pipe->pipe_identifier = charNum - '0';
+                    // determine redirecton number, if not specified, set 0 by default for input file
+                    string str = *iter;
+                    char charNum = iter->at(0);
+                    if (charNum == '<')
+                        temp_pipe->pipe_identifier = 0;
+                    else
+                        temp_pipe->pipe_identifier = charNum - '0';
 
-                            filename = prevToken;
-                            cout << filename << endl;
-                            openFile(filename, temp_pipe->pipe_identifier, &pipefd[0]);
-                            close(temp_pipe->pipe_identifier);
-                            dup2(pipefd[0], temp_pipe->pipe_identifier );
-                            close(pipefd[0]);
-                            iter++;
-                            index = 0;
-                        }
-                        else
-                        {
-                            index=0;
-                            type='p';
-                            prevToken=*iter;
-                            iter++;
-                            prevToken=*iter;
-                            if (++iter==tokens.end())
-                                break;
-                            break;
-                        }
-                    }
-                    // '>' found as token
-                    if (foundr!=std::string::npos) {
-                        temp_pipe = new pipeElement();
-                        piped=true;
-                        pidT=fork();
 
-                        if(pidT==-1)
-                        {
-                            perror("fork()");
-                            exit(EXIT_FAILURE);
-                        }
-                        else if(pidT==0) {
-                            type='c';
-                            temp_pipe->direction='r';
+                    ++iter;
+                    filename = *iter;
+                    openFile(filename, temp_pipe->pipe_identifier, &defaultFDs[temp_pipe->pipe_identifier]);
+                    close(temp_pipe->pipe_identifier);
+                    dup2(defaultFDs[temp_pipe->pipe_identifier], temp_pipe->pipe_identifier );
+                    close(defaultFDs[temp_pipe->pipe_identifier]);
+                    isRedirected=true;
+                    continue;
 
-                            // determine redirecton number, if not specified, set 1
-                            string str = *iter;
-                            char charNum = iter->at(0);
-                            if(charNum=='>')
-                                temp_pipe->pipe_identifier=1;
-                            else
-                                temp_pipe->pipe_identifier=charNum - '0';
+                }
+                // '>' found as token
+                if (foundRightRedirection!=std::string::npos) {
+                    temp_pipe = new pipeElement();
+                    type = 'c';
+                    temp_pipe->direction = 'r';
 
-                            iter++;
-                            filename = *iter;
-                            openFile(filename, temp_pipe->pipe_identifier, &pipefd[1]);
-                            close(temp_pipe->pipe_identifier);
-                            dup2(pipefd[1], temp_pipe->pipe_identifier );
-                            close(pipefd[1]);
+                    // determine redirecton number, if not specified, set 1
+                    string str = *iter;
+                    char charNum = iter->at(0);
+                    if (charNum == '>')
+                        temp_pipe->pipe_identifier = 1;
+                    else
+                        temp_pipe->pipe_identifier = charNum - '0';
 
-                            break;
-                        }
-                        else
-                        {
-                            index=0;
-                            type='p';
-                            prevToken=*iter;
-                            iter++;
-                            prevToken=*iter;
-                            if (++iter==tokens.end())
-                                break;
-                        }
-                    }
+                    ++iter;
+                    filename = *iter;
+                    openFile(filename, temp_pipe->pipe_identifier, &defaultFDs[temp_pipe->pipe_identifier]);
+                    close(temp_pipe->pipe_identifier);
+                    dup2(defaultFDs[temp_pipe->pipe_identifier], temp_pipe->pipe_identifier );
+                    close(defaultFDs[temp_pipe->pipe_identifier]);
+                    isRedirected=true;
+                    continue;
+                }
+
+
+                if (pipeFound!=std::string::npos) {
+
+                }
 
                     array[index] = iter->c_str();
                     args[index] = new char[ARGSSIZE];
 
                     // copy token after parsing it, if needed
                     strcpy(args[index], parseVar(array[index]).c_str());
-//                    cout << args[index] << endl;
                     index++;
 
-
-                }
-            prevToken=*iter;
+                    prevToken=*iter;
             }
             // put NULL to end of args list
             args[index]=NULL;
 
             pid_t zombiePid,pid;
             int WEXITSTATUS_status;
-            int pipefd[2];
-            char buf;
+
 
 
             // fork processes
@@ -383,47 +285,48 @@ char evaluate(){
                 // for child process, run function execvp and send args list
                 // in case of failure, print error and exit with status 127
                 case 0:
-                        if (piped && temp_pipe->direction=='>'&&type=='c') {
-                            if (execvp(args[0], args) == -1) {
-                                cout << strerror(errno) << endl;
-                                cout << args[0] << " command not found" << endl;
-                                exit(127);
-                            }
-//                            close(pipefd[0]);
-//                            if(fcntl(pipefd[0], F_GETFD)==0)
-//                            {
-//                                dup2(temp_pipe->pipe_identifier,pipefd[0]);
-//    //                            close(pipefd[0]);
+//                        if (piped && temp_pipe->direction=='>'&&type=='c') {
+//                            if (execvp(args[0], args) == -1) {
+//                                cout << strerror(errno) << endl;
+//                                cout << args[0] << " command not found" << endl;
+//                                exit(127);
 //                            }
-                        }
-                        else if(piped && temp_pipe->direction=='<' && type=='c'){
-//                            //                        if(fcntl(pipefd[0], F_GETFD)==0)
-////                        {
-////                            dup2(temp_pipe->pipe_identifier,pipefd[0]);
-//////                            close(pipefd[0]);
-////                        }
-//                            close(pipefd[0]);
-                        }
-                        else {
+////                            close(pipefd[0]);
+////                            if(fcntl(pipefd[0], F_GETFD)==0)
+////                            {
+////                                dup2(temp_pipe->pipe_identifier,pipefd[0]);
+////    //                            close(pipefd[0]);
+////                            }
+//                        }
+//                        else if(piped && temp_pipe->direction=='<' && type=='c'){
+////                            //                        if(fcntl(pipefd[0], F_GETFD)==0)
+//////                        {
+//////                            dup2(temp_pipe->pipe_identifier,pipefd[0]);
+////////                            close(pipefd[0]);
+//////                        }
+////                            close(pipefd[0]);
+//                        }
+//                        else {
                             if (execvp(args[0], args) == -1) {
                                 cout << strerror(errno) << endl;
                                 cout << args[0] << " command not found" << endl;
                                 exit(127);
                             }
+                            else
+                                lastExitStatus=0;
 
-                        }
+                            if(isRedirected){
+                                dup2(defaultFDs[0],STDIN);
+                                dup2(defaultFDs[1],STDOUT);
+                                dup2(defaultFDs[2],STDERR);
+                            }
+//                            close(pipefd[0]);
+//                        }
                     break;
 
                 // for parent process
                 default:
-                    if(piped){
 
-//                        if(fcntl(pipefd[0], F_GETFD)==0)
-//                        {
-//                            dup2(temp_pipe->pipe_identifier,pipefd[0]);
-////                            close(pipefd[0]);
-//                        }
-                    }
                     if (deamonProc) {
                         cout << "[" << pid << "]\n";
                         lastExitStatus = 0;
