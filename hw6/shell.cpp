@@ -255,7 +255,7 @@ char evaluate(){
                     continue;
                 }
 
-
+                int pipedProcessID;
                 if (pipeFound!=std::string::npos) {
 
                 }
