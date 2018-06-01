@@ -8,8 +8,9 @@ using namespace std;
 #define STDIN 0
 #define STDOUT 1
 #define STDERR 2
-int lastExitStatus=0;
-int defaultFDs[]={STDIN,STDOUT,STDERR};
+
+int lastExitStatus=0,procID;
+int defaultpipefd[]={STDIN,STDOUT,STDERR};
 
 list< std::string > tokens;
 struct pipeElement{
@@ -109,7 +110,6 @@ char evaluate(){
 
         char type;
         string path="";
-    bool isPiped = false;
 
 
     // loop iterates over tokens list
@@ -192,10 +192,13 @@ char evaluate(){
             char *args[toksNumber+1];
 
             index=0;
-            bool isRedirected=false;
+            bool isRedirected=false,isPiped=false;
             pipeElement* temp_pipe;
             temp_pipe = new pipeElement();
             string filename,prevToken="";
+            int pipefd[2];
+            pid_t masterPid,pipe_pid,cmd1_pid;
+
             // because we need to send array of args to execv, need to copy
             // tokens from LIST type to char[]
             for (list<string>::const_iterator iter = it; iter != tokens.end(); ++iter) {
@@ -205,7 +208,10 @@ char evaluate(){
                 std::size_t pipeFound = iter->find("|");
 
                 if(*iter == "&" && index==toksNumber)
+                {
                     deamonProc=1;
+                    break;
+                }
 
                 if (foundLeftRedirection!=std::string::npos) {
                     temp_pipe = new pipeElement();
@@ -223,10 +229,10 @@ char evaluate(){
 
                     ++iter;
                     filename = *iter;
-                    openFile(filename, temp_pipe->pipe_identifier, &defaultFDs[temp_pipe->pipe_identifier]);
+                    openFile(filename, temp_pipe->pipe_identifier, &defaultpipefd[temp_pipe->pipe_identifier]);
                     close(temp_pipe->pipe_identifier);
-                    dup2(defaultFDs[temp_pipe->pipe_identifier], temp_pipe->pipe_identifier );
-                    close(defaultFDs[temp_pipe->pipe_identifier]);
+                    dup2(defaultpipefd[temp_pipe->pipe_identifier], temp_pipe->pipe_identifier );
+                    close(defaultpipefd[temp_pipe->pipe_identifier]);
                     isRedirected=true;
                     continue;
 
@@ -247,18 +253,50 @@ char evaluate(){
 
                     ++iter;
                     filename = *iter;
-                    openFile(filename, temp_pipe->pipe_identifier, &defaultFDs[temp_pipe->pipe_identifier]);
+                    openFile(filename, temp_pipe->pipe_identifier, &defaultpipefd[temp_pipe->pipe_identifier]);
                     close(temp_pipe->pipe_identifier);
-                    dup2(defaultFDs[temp_pipe->pipe_identifier], temp_pipe->pipe_identifier );
-                    close(defaultFDs[temp_pipe->pipe_identifier]);
+                    dup2(defaultpipefd[temp_pipe->pipe_identifier], temp_pipe->pipe_identifier );
+                    close(defaultpipefd[temp_pipe->pipe_identifier]);
                     isRedirected=true;
                     continue;
                 }
 
-                int pipedProcessID;
-                if (pipeFound!=std::string::npos) {
+                    if (pipeFound!=std::string::npos) {
+                        isPiped=true;
+                        iter++;
 
-                }
+                        if (pipe (pipefd))
+                        {
+                            perror("pipe()");
+                            exit(EXIT_FAILURE);
+                        }
+
+                        pipe_pid=fork();
+                            if(pipe_pid==0){
+                                cmd1_pid=getpid();
+                                cout << "cmd1_pid " << cmd1_pid<<endl;
+                                close(STDOUT);
+                                close(pipefd[0]);
+                                dup2(pipefd[1],STDOUT);
+                                close(pipefd[1]);
+                                break;
+                            }
+                            if (pipe_pid >0)
+                            {
+                                index=0;
+                                sleep(1);
+                                cout << "child 2 waiting to child 1 "<<pipe_pid<<endl;
+
+                                close(STDIN);
+                                close(pipefd[1]);
+                                dup2(pipefd[0],STDIN);
+                                close(pipefd[0]);
+                            }
+
+                    }
+
+
+
 
                     array[index] = iter->c_str();
                     args[index] = new char[ARGSSIZE];
@@ -272,119 +310,107 @@ char evaluate(){
             // put NULL to end of args list
             args[index]=NULL;
 
-            pid_t zombiePid,pid;
+            pid_t zombiePid,pid2;
             int WEXITSTATUS_status;
+            int statusPipe;
+            int statusP;
 
 
 
-            // fork processes
-            switch(pid=fork()) {
-                case -1:
-                    cout << "fork() command not succseed\n" << endl;
-                    exit(1);
-                // for child process, run function execvp and send args list
-                // in case of failure, print error and exit with status 127
-                case 0:
-//                        if (piped && temp_pipe->direction=='>'&&type=='c') {
-//                            if (execvp(args[0], args) == -1) {
-//                                cout << strerror(errno) << endl;
-//                                cout << args[0] << " command not found" << endl;
-//                                exit(127);
-//                            }
-////                            close(pipefd[0]);
-////                            if(fcntl(pipefd[0], F_GETFD)==0)
-////                            {
-////                                dup2(temp_pipe->pipe_identifier,pipefd[0]);
-////    //                            close(pipefd[0]);
-////                            }
-//                        }
-//                        else if(piped && temp_pipe->direction=='<' && type=='c'){
-////                            //                        if(fcntl(pipefd[0], F_GETFD)==0)
-//////                        {
-//////                            dup2(temp_pipe->pipe_identifier,pipefd[0]);
-////////                            close(pipefd[0]);
-//////                        }
-////                            close(pipefd[0]);
-//                        }
-//                        else {
-                            if (execvp(args[0], args) == -1) {
-                                cout << strerror(errno) << endl;
-                                cout << args[0] << " command not found" << endl;
-                                exit(127);
-                            }
-                            else
-                                lastExitStatus=0;
 
-                            if(isRedirected){
-                                dup2(defaultFDs[0],STDIN);
-                                dup2(defaultFDs[1],STDOUT);
-                                dup2(defaultFDs[2],STDERR);
-                            }
+
+                // fork processes
+                switch (pid2 = fork()) {
+                    case -1:
+                        cout << "fork() command not succseed\n" << endl;
+                        exit(1);
+                        // for child process, run function execvp and send args list
+                        // in case of failure, print error and exit with status 127
+                    case 0:
+                        if (execvp(args[0], args) == -1) {
+                            cout << strerror(errno) << endl;
+                            cout << args[0] << " command not found" << endl;
+                            exit(127);
+                        } else
+                            lastExitStatus = 0;
+//                        if(isPiped)
+//                            return 't';
+
+                        if (isRedirected) {
+                            dup2(defaultpipefd[0], STDIN);
+                            dup2(defaultpipefd[1], STDOUT);
+                            dup2(defaultpipefd[2], STDERR);
+                        }
 //                            close(pipefd[0]);
 //                        }
-                    break;
+                        break;
 
-                // for parent process
-                default:
-
-                    if (deamonProc) {
-                        cout << "[" << pid << "]\n";
-                        lastExitStatus = 0;
-                    }
-                    // if not DEAMON, run WAITPID and wait for child process
-                    // and update his exit status
-                    else {
-                        if (waitpid(pid, &status, 0) == -1)
-                        {
-                            lastExitStatus = 1;
-                            exit(1);
-                        }
-
-                        // get child exit status
-                        WEXITSTATUS_status = WEXITSTATUS(status);
-
-                        // if child process succeed, update last status to 0
-                        if (WEXITSTATUS_status == 0)
+                        // for parent process
+                    default:
+//                        waitpid(pid2, NULL, 0);
+                        if(isPiped){
+                            close(pipefd[0]);
+                            close(pipefd[1]);
+                          }
+                        if (deamonProc) {
+                            cout << "[" << pid2 << "]\n";
                             lastExitStatus = 0;
-
-                        // if child process, closed with signal, update lastexitstatus
-                        // with 128+signal number
-                        else if (WIFSIGNALED(status)) {
-                            WEXITSTATUS_status = 128 + WTERMSIG(status);
-                            lastExitStatus = WEXITSTATUS_status;;
-                            cout << "signal status:" << lastExitStatus << endl;
                         }
-                        // if not terminated, update last exit status
+                            // if not DEAMON, run WAITPID and wait for child process
+                            // and update his exit status
                         else {
-                            lastExitStatus = WEXITSTATUS_status;
-                            cout << "exit status : " << lastExitStatus << endl;
-                        }
-
-                        // this loop carries ZOMBIE processes termination
-                        while ((zombiePid = waitpid(-1, &status, WNOHANG)) > 0) {
-
-                            int ZOMBIE_status = 0;
-                            string zombieReturnStatus = "";
-
-                            if (WIFEXITED(status)) {
-                                ZOMBIE_status = WEXITSTATUS(status);
-                                zombieReturnStatus = to_string(ZOMBIE_status);
-
-                                cout << "deamon process : ["<< zombiePid << "] exit status : " << zombieReturnStatus << endl;
-
-
-                            } else if (WIFSIGNALED(status)) {
-                                ZOMBIE_status = 128 + WTERMSIG(status);
-                                zombieReturnStatus = to_string(ZOMBIE_status);
-                                cout << "deamon process : ["<< zombiePid << "] signal status : " << zombieReturnStatus << endl;
-
+                            if (waitpid(pid2, &status, 0) == -1) {
+                                lastExitStatus = 1;
+                                exit(1);
                             }
 
-                            cout << "Process [" << zombiePid<< "] exited "<< endl;
-                        }
-                    }
-            }
+                            // get child exit status
+                            WEXITSTATUS_status = WEXITSTATUS(status);
 
+                            // if child process succeed, update last status to 0
+                            if (WEXITSTATUS_status == 0)
+                                lastExitStatus = 0;
+
+                                // if child process, closed with signal, update lastexitstatus
+                                // with 128+signal number
+                            else if (WIFSIGNALED(status)) {
+                                WEXITSTATUS_status = 128 + WTERMSIG(status);
+                                lastExitStatus = WEXITSTATUS_status;;
+                                cout << "signal status:" << lastExitStatus << endl;
+                            }
+                                // if not terminated, update last exit status
+                            else {
+                                lastExitStatus = WEXITSTATUS_status;
+                                cout << "exit status : " << lastExitStatus << endl;
+                            }
+
+                            // this loop carries ZOMBIE processes termination
+                            while ((zombiePid = waitpid(-1, &status, WNOHANG)) > 0) {
+
+                                int ZOMBIE_status = 0;
+                                string zombieReturnStatus = "";
+
+                                if (WIFEXITED(status)) {
+                                    ZOMBIE_status = WEXITSTATUS(status);
+                                    zombieReturnStatus = to_string(ZOMBIE_status);
+
+                                    cout << "deamon process : [" << zombiePid << "] exit status : "
+                                         << zombieReturnStatus << endl;
+
+
+                                } else if (WIFSIGNALED(status)) {
+                                    ZOMBIE_status = 128 + WTERMSIG(status);
+                                    zombieReturnStatus = to_string(ZOMBIE_status);
+                                    cout << "deamon process : [" << zombiePid << "] signal status : "
+                                         << zombieReturnStatus << endl;
+
+                                }
+
+                                cout << "Process [" << zombiePid << "] exited " << endl;
+                            }
+                        }
+
+            }
             return type;
 
             }
