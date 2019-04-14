@@ -1,7 +1,7 @@
 Homework #3
 ---------------------------------
-Alexey Silyuk		\n
-Roman Chichkovich	
+> Alexey Silyuk		
+> Roman Chichkovich	
 
 
 EXECUTION:
