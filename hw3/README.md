@@ -1,7 +1,7 @@
 Homework #3
 ---------------------------------
-Alexey Silyuk		323359471
-Roman Chichkovich	338057227
+Alexey Silyuk		\n
+Roman Chichkovich	
 
 
 EXECUTION:
